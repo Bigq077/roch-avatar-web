@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Roch Avatar Chat Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; }
+    #chat { border: 1px solid #ddd; border-radius: 8px; padding: 12px; min-height: 220px; }
+    .msg { margin: 10px 0; }
+    .me { font-weight: 700; }
+    .ai { font-weight: 700; }
+    textarea { width: 100%; height: 70px; padding: 10px; }
+    button { padding: 10px 14px; cursor: pointer; }
+    .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+    input { padding: 8px; }
+    small { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Roch Avatar Chat — Test Page</h1>
+  <p><small>This is a quick test page to prove the website can talk to your Render backend.</small></p>
+
+  <div class="row">
+    <label>Clinic ID:</label>
+    <input id="clinicId" value="demo" />
+    <label>Session ID:</label>
+    <input id="sessionId" />
+  </div>
+
+  <div id="chat"></div>
+
+  <div class="row">
+    <textarea id="message" placeholder="Type a question (e.g. 'What are your opening hours?')"></textarea>
+  </div>
+
+  <div class="row">
+    <button id="sendBtn">Send</button>
+    <span id="status"></span>
+  </div>
+
+  <script>
+    // 1) PUT YOUR RENDER BACKEND BASE URL HERE:
+    // Example: https://rochsolutions-ai-receptionist.onrender.com
+    const BACKEND_BASE_URL = "https://rochsolutions-ai-receptionist.onrender.com";
+
+    // 2) Create a session id once per browser (so the conversation persists)
+    const sessionIdInput = document.getElementById("sessionId");
+    const existing = localStorage.getItem("roch_session_id");
+    const newId = existing || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+    localStorage.setItem("roch_session_id", newId);
+    sessionIdInput.value = newId;
+
+    const chat = document.getElementById("chat");
+    const statusEl = document.getElementById("status");
+
+    function addMsg(who, text) {
+      const div = document.createElement("div");
+      div.className = "msg";
+      div.innerHTML = `<span class="${who === "You" ? "me" : "ai"}">${who}:</span> ${escapeHtml(text)}`;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, (m) => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[m]));
+    }
+
+    async function send() {
+      const clinic_id = document.getElementById("clinicId").value.trim();
+      const session_id = document.getElementById("sessionId").value.trim();
+      const messageEl = document.getElementById("message");
+      const message = messageEl.value.trim();
+      if (!message) return;
+
+      addMsg("You", message);
+      messageEl.value = "";
+      statusEl.textContent = "Sending...";
+
+      try {
+        const res = await fetch(`${BACKEND_BASE_URL}/avatar/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clinic_id, session_id, message })
+        });
+
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(`HTTP ${res.status}: ${t}`);
+        }
+
+        const data = await res.json();
+        addMsg("AI", data.reply_text || "(no reply_text)");
+        statusEl.textContent = "OK";
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Error (check console)";
+        addMsg("AI", `Error: ${err.message}`);
+      }
+    }
+
+    document.getElementById("sendBtn").addEventListener("click", send);
+    document.getElementById("message").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+  </script>
+</body>
+</html>
