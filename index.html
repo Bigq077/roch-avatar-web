@@ -12,14 +12,15 @@
     .ai { font-weight: 700; }
     textarea { width: 100%; height: 70px; padding: 10px; }
     button { padding: 10px 14px; cursor: pointer; }
-    .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; }
+    .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
     input { padding: 8px; }
     small { color: #666; }
+    .hint { margin-top: 8px; }
   </style>
 </head>
 <body>
   <h1>Roch Avatar Chat — Test Page</h1>
-  <p><small>This is a quick test page to prove the website can talk to your Render backend.</small></p>
+  <p><small>This is a quick test page to prove the website can talk to your Render backend (text + voice upload).</small></p>
 
   <div class="row">
     <label>Clinic ID:</label>
@@ -36,15 +37,18 @@
 
   <div class="row">
     <button id="sendBtn">Send</button>
+    <button id="recBtn">🎙 Record</button>
+    <button id="stopRecBtn" disabled>⏹ Stop</button>
     <span id="status"></span>
   </div>
 
+  <p class="hint"><small>Voice uses your backend endpoint <code>/avatar/voice-turn</code> (Deepgram STT). Text uses <code>/avatar/chat</code>.</small></p>
+
   <script>
-    // 1) PUT YOUR RENDER BACKEND BASE URL HERE:
-    // Example: https://rochsolutions-ai-receptionist.onrender.com
+    // Backend base URL (Render)
     const BACKEND_BASE_URL = "https://rochsolutions-ai-receptionist.onrender.com";
 
-    // 2) Create a session id once per browser (so the conversation persists)
+    // Create a session id once per browser (so the conversation persists)
     const sessionIdInput = document.getElementById("sessionId");
     const existing = localStorage.getItem("roch_session_id");
     const newId = existing || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
@@ -63,11 +67,14 @@
     }
 
     function escapeHtml(str) {
-      return str.replace(/[&<>"']/g, (m) => ({
+      return String(str).replace(/[&<>"']/g, (m) => ({
         "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
       }[m]));
     }
 
+    // ---------------------------
+    // TEXT: POST /avatar/chat
+    // ---------------------------
     async function send() {
       const clinic_id = document.getElementById("clinicId").value.trim();
       const session_id = document.getElementById("sessionId").value.trim();
@@ -108,6 +115,105 @@
         send();
       }
     });
+
+    // ---------------------------
+    // VOICE (Option B): Record + Upload to /avatar/voice-turn
+    // ---------------------------
+    const recBtn = document.getElementById("recBtn");
+    const stopRecBtn = document.getElementById("stopRecBtn");
+
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let stream = null;
+
+    async function startRecording() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunks = [];
+
+        // Prefer opus if available
+        let mimeType = "audio/webm";
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          mimeType = "audio/webm;codecs=opus";
+        } else if (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm")) {
+          mimeType = "audio/webm";
+        }
+
+        mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstart = () => {
+          statusEl.textContent = "Recording…";
+          recBtn.disabled = true;
+          stopRecBtn.disabled = false;
+        };
+
+        mediaRecorder.onstop = async () => {
+          statusEl.textContent = "Uploading…";
+          recBtn.disabled = false;
+          stopRecBtn.disabled = true;
+
+          // stop mic tracks
+          if (stream) stream.getTracks().forEach(t => t.stop());
+
+          const blob = new Blob(audioChunks, { type: mimeType });
+          await sendAudioBlob(blob);
+        };
+
+        mediaRecorder.start();
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Mic permission denied or unavailable.";
+      }
+    }
+
+    function stopRecording() {
+      try {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          mediaRecorder.stop();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function sendAudioBlob(blob) {
+      const clinic_id = document.getElementById("clinicId").value.trim();
+      const session_id = document.getElementById("sessionId").value.trim();
+
+      const fd = new FormData();
+      fd.append("clinic_id", clinic_id);
+      fd.append("session_id", session_id);
+      fd.append("audio", blob, "speech.webm");
+
+      try {
+        const res = await fetch(`${BACKEND_BASE_URL}/avatar/voice-turn`, {
+          method: "POST",
+          body: fd
+        });
+
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(`HTTP ${res.status}: ${t}`);
+        }
+
+        const data = await res.json();
+        addMsg("You", data.transcript || "(no transcript)");
+        addMsg("AI", data.reply_text || "(no reply)");
+        statusEl.textContent = "OK";
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = "Voice error (check console)";
+        addMsg("AI", `Error: ${err.message}`);
+      }
+    }
+
+    recBtn.addEventListener("click", startRecording);
+    stopRecBtn.addEventListener("click", stopRecording);
   </script>
 </body>
 </html>
+
