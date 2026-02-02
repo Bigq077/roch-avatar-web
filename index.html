@@ -20,7 +20,7 @@
 </head>
 <body>
   <h1>Roch Avatar Chat — Test Page</h1>
-  <p><small>This is a quick test page to prove the website can talk to your Render backend (text + voice upload).</small></p>
+  <p><small>Text + Voice (Deepgram STT + TTS) test page.</small></p>
 
   <div class="row">
     <label>Clinic ID:</label>
@@ -42,13 +42,23 @@
     <span id="status"></span>
   </div>
 
-  <p class="hint"><small>Voice uses your backend endpoint <code>/avatar/voice-turn</code> (Deepgram STT). Text uses <code>/avatar/chat</code>.</small></p>
+  <p class="hint">
+    <small>
+      Text → <code>/avatar/chat</code> |
+      Voice in → <code>/avatar/voice-turn</code> |
+      Voice out → <code>/avatar/tts</code>
+    </small>
+  </p>
 
   <script>
-    // Backend base URL (Render)
+    // ---------------------------
+    // CONFIG
+    // ---------------------------
     const BACKEND_BASE_URL = "https://rochsolutions-ai-receptionist.onrender.com";
 
-    // Create a session id once per browser (so the conversation persists)
+    // ---------------------------
+    // SESSION
+    // ---------------------------
     const sessionIdInput = document.getElementById("sessionId");
     const existing = localStorage.getItem("roch_session_id");
     const newId = existing || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
@@ -67,24 +77,23 @@
     }
 
     function escapeHtml(str) {
-      return String(str).replace(/[&<>"']/g, (m) => ({
+      return String(str).replace(/[&<>"']/g, m => ({
         "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
       }[m]));
     }
 
     // ---------------------------
-    // TEXT: POST /avatar/chat
+    // TEXT CHAT
     // ---------------------------
     async function send() {
-      const clinic_id = document.getElementById("clinicId").value.trim();
-      const session_id = document.getElementById("sessionId").value.trim();
-      const messageEl = document.getElementById("message");
+      const clinic_id = clinicId.value.trim();
+      const session_id = sessionId.value.trim();
       const message = messageEl.value.trim();
       if (!message) return;
 
       addMsg("You", message);
       messageEl.value = "";
-      statusEl.textContent = "Sending...";
+      statusEl.textContent = "Sending…";
 
       try {
         const res = await fetch(`${BACKEND_BASE_URL}/avatar/chat`, {
@@ -93,127 +102,99 @@
           body: JSON.stringify({ clinic_id, session_id, message })
         });
 
-        if (!res.ok) {
-          const t = await res.text();
-          throw new Error(`HTTP ${res.status}: ${t}`);
-        }
-
+        if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
-        addMsg("AI", data.reply_text || "(no reply_text)");
+
+        addMsg("AI", data.reply_text || "(no reply)");
         statusEl.textContent = "OK";
+        speakViaBackend(data.reply_text);
       } catch (err) {
         console.error(err);
-        statusEl.textContent = "Error (check console)";
-        addMsg("AI", `Error: ${err.message}`);
+        statusEl.textContent = "Error";
       }
     }
 
-    document.getElementById("sendBtn").addEventListener("click", send);
-    document.getElementById("message").addEventListener("keydown", (e) => {
+    const sendBtn = document.getElementById("sendBtn");
+    const messageEl = document.getElementById("message");
+    sendBtn.onclick = send;
+    messageEl.onkeydown = e => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         send();
       }
-    });
+    };
 
     // ---------------------------
-    // VOICE (Option B): Record + Upload to /avatar/voice-turn
+    // DEEPGRAM TTS
+    // ---------------------------
+    async function speakViaBackend(text) {
+      if (!text) return;
+      try {
+        const res = await fetch(`${BACKEND_BASE_URL}/avatar/tts`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+
+        const audio = new Audio(`data:${data.mime_type};base64,${data.audio_b64}`);
+        audio.play();
+      } catch (err) {
+        console.error("TTS error:", err);
+      }
+    }
+
+    // ---------------------------
+    // VOICE INPUT (STT)
     // ---------------------------
     const recBtn = document.getElementById("recBtn");
     const stopRecBtn = document.getElementById("stopRecBtn");
+    let mediaRecorder, audioChunks = [], stream;
 
-    let mediaRecorder = null;
-    let audioChunks = [];
-    let stream = null;
+    recBtn.onclick = async () => {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
 
-    async function startRecording() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioChunks = [];
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(audioChunks, { type: "audio/webm" });
+        await sendAudioBlob(blob);
+      };
 
-        // Prefer opus if available
-        let mimeType = "audio/webm";
-        if (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-          mimeType = "audio/webm;codecs=opus";
-        } else if (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm")) {
-          mimeType = "audio/webm";
-        }
+      mediaRecorder.start();
+      recBtn.disabled = true;
+      stopRecBtn.disabled = false;
+      statusEl.textContent = "Recording…";
+    };
 
-        mediaRecorder = new MediaRecorder(stream, { mimeType });
-
-        mediaRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) audioChunks.push(e.data);
-        };
-
-        mediaRecorder.onstart = () => {
-          statusEl.textContent = "Recording…";
-          recBtn.disabled = true;
-          stopRecBtn.disabled = false;
-        };
-
-        mediaRecorder.onstop = async () => {
-          statusEl.textContent = "Uploading…";
-          recBtn.disabled = false;
-          stopRecBtn.disabled = true;
-
-          // stop mic tracks
-          if (stream) stream.getTracks().forEach(t => t.stop());
-
-          const blob = new Blob(audioChunks, { type: mimeType });
-          await sendAudioBlob(blob);
-        };
-
-        mediaRecorder.start();
-      } catch (err) {
-        console.error(err);
-        statusEl.textContent = "Mic permission denied or unavailable.";
-      }
-    }
-
-    function stopRecording() {
-      try {
-        if (mediaRecorder && mediaRecorder.state !== "inactive") {
-          mediaRecorder.stop();
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    }
+    stopRecBtn.onclick = () => {
+      mediaRecorder.stop();
+      recBtn.disabled = false;
+      stopRecBtn.disabled = true;
+      statusEl.textContent = "Uploading…";
+    };
 
     async function sendAudioBlob(blob) {
-      const clinic_id = document.getElementById("clinicId").value.trim();
-      const session_id = document.getElementById("sessionId").value.trim();
-
       const fd = new FormData();
-      fd.append("clinic_id", clinic_id);
-      fd.append("session_id", session_id);
+      fd.append("clinic_id", clinicId.value.trim());
+      fd.append("session_id", sessionId.value.trim());
       fd.append("audio", blob, "speech.webm");
 
-      try {
-        const res = await fetch(`${BACKEND_BASE_URL}/avatar/voice-turn`, {
-          method: "POST",
-          body: fd
-        });
+      const res = await fetch(`${BACKEND_BASE_URL}/avatar/voice-turn`, {
+        method: "POST",
+        body: fd
+      });
 
-        if (!res.ok) {
-          const t = await res.text();
-          throw new Error(`HTTP ${res.status}: ${t}`);
-        }
-
-        const data = await res.json();
-        addMsg("You", data.transcript || "(no transcript)");
-        addMsg("AI", data.reply_text || "(no reply)");
-        statusEl.textContent = "OK";
-      } catch (err) {
-        console.error(err);
-        statusEl.textContent = "Voice error (check console)";
-        addMsg("AI", `Error: ${err.message}`);
-      }
+      const data = await res.json();
+      addMsg("You", data.transcript);
+      addMsg("AI", data.reply_text);
+      speakViaBackend(data.reply_text);
+      statusEl.textContent = "OK";
     }
-
-    recBtn.addEventListener("click", startRecording);
-    stopRecBtn.addEventListener("click", stopRecording);
   </script>
 </body>
 </html>
-
