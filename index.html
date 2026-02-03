@@ -5,22 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Roch Avatar Chat Test</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; }
-    #chat { border: 1px solid #ddd; border-radius: 8px; padding: 12px; min-height: 220px; }
+    body { font-family: Arial, sans-serif; max-width: 860px; margin: 40px auto; padding: 0 16px; }
+    #chat { border: 1px solid #ddd; border-radius: 8px; padding: 12px; min-height: 220px; max-height: 360px; overflow:auto; }
     .msg { margin: 10px 0; }
     .me { font-weight: 700; }
     .ai { font-weight: 700; }
     textarea { width: 100%; height: 70px; padding: 10px; }
     button { padding: 10px 14px; cursor: pointer; }
+    button[disabled] { opacity: 0.5; cursor: not-allowed; }
     .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
     input { padding: 8px; }
     small { color: #666; }
     .hint { margin-top: 8px; }
+    .card { border:1px solid #eee; border-radius: 12px; padding:12px; }
+    #avatarWrap { display:flex; gap:16px; flex-wrap: wrap; align-items:flex-start; }
+    #avatarVideo {
+      width: 320px;
+      max-width: 100%;
+      border-radius: 12px;
+      background: #000;
+    }
+    #status { min-height: 18px; }
   </style>
 </head>
 <body>
-  <h1>Roch Avatar Chat — Test Page</h1>
-  <p><small>Text + Voice (Deepgram STT + TTS) test page.</small></p>
+  <h1>Roch Avatar Chat — Interactive Avatar</h1>
+  <p><small>Text + Voice → AI brain → HeyGen video (fallback: Deepgram TTS)</small></p>
 
   <div class="row">
     <label>Clinic ID:</label>
@@ -29,37 +39,60 @@
     <input id="sessionId" />
   </div>
 
-  <div id="chat"></div>
+  <div id="avatarWrap" class="row">
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+        <strong>Avatar</strong>
+        <label style="display:flex; align-items:center; gap:6px; font-size: 13px;">
+          <input type="checkbox" id="muteToggle" checked />
+          Muted (autoplay-friendly)
+        </label>
+      </div>
+      <video id="avatarVideo" playsinline autoplay muted controls></video>
+      <div style="margin-top:8px;">
+        <small>
+          Tip: after your first click/interaction, you can unmute and autoplay will keep working.
+        </small>
+      </div>
+    </div>
 
-  <div class="row">
-    <textarea id="message" placeholder="Type a question (e.g. 'What are your opening hours?')"></textarea>
+    <div style="flex:1; min-width: 320px;">
+      <div id="chat"></div>
+
+      <div class="row">
+        <textarea id="message" placeholder="Type a question (e.g. 'What are your opening hours?')"></textarea>
+      </div>
+
+      <div class="row">
+        <button id="sendBtn">Send</button>
+        <button id="recBtn">🎙 Record</button>
+        <button id="stopRecBtn" disabled>⏹ Stop</button>
+        <span id="status"></span>
+      </div>
+
+      <p class="hint">
+        <small>
+          Text → <code>/avatar/video/start</code> + poll <code>/avatar/video/status</code><br/>
+          Voice in → <code>/avatar/voice-turn</code> (STT) → then video start + poll<br/>
+          Fallback voice out → <code>/avatar/tts</code>
+        </small>
+      </p>
+    </div>
   </div>
-
-  <div class="row">
-    <button id="sendBtn">Send</button>
-    <button id="recBtn">🎙 Record</button>
-    <button id="stopRecBtn" disabled>⏹ Stop</button>
-    <span id="status"></span>
-  </div>
-
-  <p class="hint">
-    <small>
-      Text → <code>/avatar/chat</code> |
-      Voice in → <code>/avatar/voice-turn</code> |
-      Voice out → <code>/avatar/tts</code>
-    </small>
-  </p>
 
   <script>
     // ---------------------------
     // CONFIG
     // ---------------------------
     const BACKEND_BASE_URL = "https://rochsolutions-ai-receptionist.onrender.com";
+    const POLL_INTERVAL_MS = 1500;
+    const POLL_MAX_TRIES = 40; // ~60s
 
     // ---------------------------
     // SESSION
     // ---------------------------
     const sessionIdInput = document.getElementById("sessionId");
+    const clinicIdInput = document.getElementById("clinicId");
     const existing = localStorage.getItem("roch_session_id");
     const newId = existing || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
     localStorage.setItem("roch_session_id", newId);
@@ -67,6 +100,31 @@
 
     const chat = document.getElementById("chat");
     const statusEl = document.getElementById("status");
+
+    const sendBtn = document.getElementById("sendBtn");
+    const messageEl = document.getElementById("message");
+
+    const recBtn = document.getElementById("recBtn");
+    const stopRecBtn = document.getElementById("stopRecBtn");
+
+    const videoEl = document.getElementById("avatarVideo");
+    const muteToggle = document.getElementById("muteToggle");
+    muteToggle.addEventListener("change", () => {
+      videoEl.muted = muteToggle.checked;
+    });
+
+    function setStatus(text) {
+      statusEl.textContent = text || "";
+    }
+
+    function setBusy(isBusy) {
+      sendBtn.disabled = isBusy;
+      recBtn.disabled = isBusy;
+      // stopRecBtn stays controlled by recorder state
+      messageEl.disabled = isBusy;
+      clinicIdInput.disabled = isBusy;
+      sessionIdInput.disabled = isBusy;
+    }
 
     function addMsg(who, text) {
       const div = document.createElement("div");
@@ -82,50 +140,59 @@
       }[m]));
     }
 
+    function sleep(ms) {
+      return new Promise(r => setTimeout(r, ms));
+    }
+
     // ---------------------------
-    // TEXT CHAT
+    // VIDEO AVATAR FLOW (HeyGen)
     // ---------------------------
-    async function send() {
-      const clinic_id = clinicId.value.trim();
-      const session_id = sessionId.value.trim();
-      const message = messageEl.value.trim();
-      if (!message) return;
+    async function startVideoFromText(text) {
+      const clinic_id = clinicIdInput.value.trim();
+      const session_id = sessionIdInput.value.trim();
 
-      addMsg("You", message);
-      messageEl.value = "";
-      statusEl.textContent = "Sending…";
+      const res = await fetch(`${BACKEND_BASE_URL}/avatar/video/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clinic_id, session_id, text })
+      });
 
-      try {
-        const res = await fetch(`${BACKEND_BASE_URL}/avatar/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clinic_id, session_id, message })
-        });
+      if (!res.ok) throw new Error(await res.text());
+      return await res.json(); // { reply_text, video_id, session_id }
+    }
 
+    async function pollVideo(video_id) {
+      for (let i = 0; i < POLL_MAX_TRIES; i++) {
+        const res = await fetch(`${BACKEND_BASE_URL}/avatar/video/status?video_id=${encodeURIComponent(video_id)}`);
         if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
+        const data = await res.json(); // { status, video_url }
 
-        addMsg("AI", data.reply_text || "(no reply)");
-        statusEl.textContent = "OK";
-        speakViaBackend(data.reply_text);
-      } catch (err) {
-        console.error(err);
-        statusEl.textContent = "Error";
+        if (data.status === "completed" && data.video_url) return data.video_url;
+        if (data.status === "failed") return null;
+
+        await sleep(POLL_INTERVAL_MS);
+      }
+      return null; // timeout
+    }
+
+    async function playVideo(url) {
+      // Reset and play
+      videoEl.pause();
+      videoEl.currentTime = 0;
+      videoEl.src = url;
+
+      // Some browsers need play() to be triggered after a user gesture.
+      // We already have a gesture (button click) for send/record.
+      try {
+        await videoEl.play();
+      } catch (e) {
+        // If autoplay fails due to policy, user can click play (controls enabled)
+        console.warn("Video play blocked:", e);
       }
     }
 
-    const sendBtn = document.getElementById("sendBtn");
-    const messageEl = document.getElementById("message");
-    sendBtn.onclick = send;
-    messageEl.onkeydown = e => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        send();
-      }
-    };
-
     // ---------------------------
-    // DEEPGRAM TTS
+    // DEEPGRAM TTS (fallback)
     // ---------------------------
     async function speakViaBackend(text) {
       if (!text) return;
@@ -140,60 +207,162 @@
         const data = await res.json();
 
         const audio = new Audio(`data:${data.mime_type};base64,${data.audio_b64}`);
-        audio.play();
+        await audio.play();
       } catch (err) {
         console.error("TTS error:", err);
       }
     }
 
     // ---------------------------
-    // VOICE INPUT (STT)
+    // TEXT SEND
     // ---------------------------
-    const recBtn = document.getElementById("recBtn");
-    const stopRecBtn = document.getElementById("stopRecBtn");
+    async function send() {
+      const message = messageEl.value.trim();
+      if (!message) return;
+
+      addMsg("You", message);
+      messageEl.value = "";
+
+      setBusy(true);
+      setStatus("Thinking…");
+
+      try {
+        // 1) Start generation (fast)
+        const startData = await startVideoFromText(message);
+        const replyText = startData.reply_text || "(no reply)";
+        const videoId = startData.video_id;
+
+        addMsg("AI", replyText);
+
+        // 2) Poll
+        setStatus("Generating video…");
+        const videoUrl = await pollVideo(videoId);
+
+        // 3) Play or fallback
+        if (videoUrl) {
+          setStatus("Playing…");
+          await playVideo(videoUrl);
+          setStatus("OK");
+        } else {
+          setStatus("Video failed — playing audio fallback…");
+          await speakViaBackend(replyText);
+          setStatus("OK");
+        }
+      } catch (err) {
+        console.error(err);
+        setStatus("Error — fallback to audio…");
+        // As a fallback of fallback, we can at least TTS the typed message response by calling /avatar/chat,
+        // but you asked to keep it simple. For now, just show error.
+        setStatus("Error");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    sendBtn.onclick = send;
+    messageEl.onkeydown = e => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    };
+
+    // Re-enable mic after video ends
+    videoEl.addEventListener("ended", () => {
+      setStatus("Your turn — speak or type.");
+    });
+
+    // ---------------------------
+    // VOICE INPUT (STT) -> VIDEO
+    // ---------------------------
     let mediaRecorder, audioChunks = [], stream;
 
     recBtn.onclick = async () => {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (e) {
+        alert("Microphone permission denied.");
+        return;
+      }
+
       audioChunks = [];
       mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
 
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         const blob = new Blob(audioChunks, { type: "audio/webm" });
-        await sendAudioBlob(blob);
+        await handleVoiceBlob(blob);
       };
 
       mediaRecorder.start();
       recBtn.disabled = true;
       stopRecBtn.disabled = false;
-      statusEl.textContent = "Recording…";
+      setStatus("Recording…");
     };
 
     stopRecBtn.onclick = () => {
       mediaRecorder.stop();
-      recBtn.disabled = false;
       stopRecBtn.disabled = true;
-      statusEl.textContent = "Uploading…";
+      setStatus("Uploading…");
     };
 
-    async function sendAudioBlob(blob) {
-      const fd = new FormData();
-      fd.append("clinic_id", clinicId.value.trim());
-      fd.append("session_id", sessionId.value.trim());
-      fd.append("audio", blob, "speech.webm");
+    async function handleVoiceBlob(blob) {
+      setBusy(true);
 
-      const res = await fetch(`${BACKEND_BASE_URL}/avatar/voice-turn`, {
-        method: "POST",
-        body: fd
-      });
+      try {
+        // 1) Send to STT endpoint (returns transcript)
+        const fd = new FormData();
+        fd.append("clinic_id", clinicIdInput.value.trim());
+        fd.append("session_id", sessionIdInput.value.trim());
+        fd.append("audio", blob, "speech.webm");
 
-      const data = await res.json();
-      addMsg("You", data.transcript);
-      addMsg("AI", data.reply_text);
-      speakViaBackend(data.reply_text);
-      statusEl.textContent = "OK";
+        const sttRes = await fetch(`${BACKEND_BASE_URL}/avatar/voice-turn`, {
+          method: "POST",
+          body: fd
+        });
+
+        if (!sttRes.ok) throw new Error(await sttRes.text());
+        const sttData = await sttRes.json();
+
+        const transcript = (sttData.transcript || "").trim();
+        if (!transcript) {
+          setStatus("Could not transcribe — try again.");
+          return;
+        }
+
+        addMsg("You", transcript);
+
+        // 2) Generate video from transcript (this calls brain once, in /video/start)
+        setStatus("Thinking…");
+        const startData = await startVideoFromText(transcript);
+        const replyText = startData.reply_text || "(no reply)";
+        const videoId = startData.video_id;
+
+        addMsg("AI", replyText);
+
+        // 3) Poll + Play
+        setStatus("Generating video…");
+        const videoUrl = await pollVideo(videoId);
+
+        if (videoUrl) {
+          setStatus("Playing…");
+          await playVideo(videoUrl);
+          setStatus("OK");
+        } else {
+          setStatus("Video failed — playing audio fallback…");
+          await speakViaBackend(replyText);
+          setStatus("OK");
+        }
+      } catch (err) {
+        console.error(err);
+        setStatus("Error");
+      } finally {
+        setBusy(false);
+        recBtn.disabled = false;
+        stopRecBtn.disabled = true;
+      }
     }
   </script>
 </body>
