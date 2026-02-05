@@ -21,12 +21,6 @@
     small { color: #666; }
     .hint { margin-top: 10px; }
     .card { border:1px solid #eee; border-radius: 12px; padding:12px; background:#fafafa; }
-    <div class="row">
-    <button id="q1">Services</button>
-    <button id="q2">Book appointment</button>
-    <button id="q3">Opening hours</button>
-    </div>
-
 
     /* Top bar */
     .topbar {
@@ -47,11 +41,52 @@
     .topbar-left { display:flex; flex-direction:column; line-height:1.1; }
     .clinic-name { font-weight:600; font-size:15px; }
     .subtitle { font-size:12px; opacity:0.75; }
+
     .status { font-size:12px; padding:6px 10px; border-radius:999px; font-weight:500; }
     .status.ready { background: rgba(34,197,94,0.15); color:#22c55e; }
     .status.thinking { background: rgba(234,179,8,0.15); color:#eab308; }
     .status.speaking { background: rgba(59,130,246,0.15); color:#3b82f6; }
     .status.error { background: rgba(239,68,68,0.15); color:#ef4444; }
+
+    /* AI Face */
+    .ai-face {
+      display:flex;
+      gap:14px;
+      align-items:center;
+      margin-top: 12px;
+      margin-bottom: 12px;
+    }
+    .ai-avatar {
+      width: 92px;
+      height: 92px;
+      border-radius: 18px;
+      background: #0b1220;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 8px 24px rgba(2,6,23,0.08);
+      overflow: hidden;
+    }
+    .ai-meta { display:flex; flex-direction:column; gap:4px; }
+    .ai-title { font-weight: 700; font-size: 14px; }
+    .ai-sub { font-size: 12px; color: #64748b; }
+
+    .ai-avatar.speaking {
+      animation: avatarPulse 0.9s ease-in-out infinite;
+    }
+    @keyframes avatarPulse {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-2px); }
+    }
+    .ai-avatar.speaking svg #mouth {
+      transform-origin: 60px 81px;
+      animation: mouthTalk 0.18s ease-in-out infinite alternate;
+    }
+    @keyframes mouthTalk {
+      from { transform: scaleY(0.7); opacity: 0.9; }
+      to   { transform: scaleY(1.8); opacity: 1; }
+    }
   </style>
 </head>
 
@@ -79,6 +114,29 @@
 
   <div class="row" style="margin-top:14px;">
     <div style="flex:1; min-width: 320px;">
+
+      <!-- AI Face -->
+      <div class="ai-face card">
+        <div class="ai-avatar" id="aiAvatar" aria-label="AI receptionist avatar">
+          <svg viewBox="0 0 120 120" width="120" height="120">
+            <defs>
+              <linearGradient id="g" x1="0" x2="1">
+                <stop offset="0" stop-color="#1e293b"/>
+                <stop offset="1" stop-color="#0f172a"/>
+              </linearGradient>
+            </defs>
+            <circle cx="60" cy="60" r="54" fill="url(#g)"/>
+            <circle cx="43" cy="52" r="6" fill="#e2e8f0"/>
+            <circle cx="77" cy="52" r="6" fill="#e2e8f0"/>
+            <rect id="mouth" x="44" y="76" width="32" height="10" rx="5" fill="#e2e8f0"/>
+          </svg>
+        </div>
+        <div class="ai-meta">
+          <div class="ai-title">AI Receptionist</div>
+          <div class="ai-sub" id="aiSub">Ready to help</div>
+        </div>
+      </div>
+
       <div id="chat"></div>
 
       <div class="row">
@@ -90,6 +148,13 @@
         <button id="recBtn">🎙 Record</button>
         <button id="stopRecBtn" disabled>⏹ Stop</button>
         <button id="stopSpeakBtn">🔇 Stop voice</button>
+      </div>
+
+      <!-- Quick buttons -->
+      <div class="row">
+        <button id="q1">Services</button>
+        <button id="q2">Book appointment</button>
+        <button id="q3">Opening hours</button>
       </div>
 
       <p class="hint">
@@ -126,6 +191,9 @@
     const recBtn = document.getElementById("recBtn");
     const stopRecBtn = document.getElementById("stopRecBtn");
     const stopSpeakBtn = document.getElementById("stopSpeakBtn");
+
+    const aiAvatarEl = document.getElementById("aiAvatar");
+    const aiSubEl = document.getElementById("aiSub");
 
     function setStatus(text) {
       const t = text || "";
@@ -171,6 +239,8 @@
         try { currentAudio.pause(); } catch {}
         currentAudio = null;
       }
+      aiAvatarEl?.classList.remove("speaking");
+      if (aiSubEl) aiSubEl.textContent = "Ready to help";
     }
 
     stopSpeakBtn.onclick = () => {
@@ -184,6 +254,8 @@
 
       stopSpeaking(); // prevent overlap
       setStatus("Speaking…");
+      aiAvatarEl?.classList.add("speaking");
+      if (aiSubEl) aiSubEl.textContent = "Speaking…";
 
       const res = await fetch(`${BACKEND_BASE_URL}/avatar/tts-eleven`, {
         method: "POST",
@@ -199,12 +271,16 @@
 
       audio.onended = () => {
         if (currentAudio === audio) currentAudio = null;
+        aiAvatarEl?.classList.remove("speaking");
+        if (aiSubEl) aiSubEl.textContent = "Ready to help";
         setStatus("Ready");
         setBusy(false);
       };
 
       audio.onerror = () => {
         if (currentAudio === audio) currentAudio = null;
+        aiAvatarEl?.classList.remove("speaking");
+        if (aiSubEl) aiSubEl.textContent = "Ready to help";
         setStatus("Ready");
         setBusy(false);
       };
@@ -227,6 +303,7 @@
 
       setBusy(true);
       setStatus("Thinking…");
+      if (aiSubEl) aiSubEl.textContent = "Thinking…";
 
       try {
         const res = await fetch(`${BACKEND_BASE_URL}/avatar/chat`, {
@@ -244,16 +321,17 @@
       } catch (err) {
         console.error(err);
         setStatus("Error");
+        if (aiSubEl) aiSubEl.textContent = "Something went wrong";
         setBusy(false);
       }
     }
 
     sendBtn.onclick = send;
 
+    // Quick buttons
     document.getElementById("q1").onclick = () => { messageEl.value = "What services do you offer?"; send(); };
     document.getElementById("q2").onclick = () => { messageEl.value = "Can I book an appointment?"; send(); };
     document.getElementById("q3").onclick = () => { messageEl.value = "What are your opening hours?"; send(); };
-
 
     messageEl.onkeydown = e => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -292,12 +370,14 @@
       recBtn.disabled = true;
       stopRecBtn.disabled = false;
       setStatus("Recording…");
+      if (aiSubEl) aiSubEl.textContent = "Listening…";
     };
 
     stopRecBtn.onclick = () => {
       mediaRecorder.stop();
       stopRecBtn.disabled = true;
       setStatus("Uploading…");
+      if (aiSubEl) aiSubEl.textContent = "Processing…";
     };
 
     async function handleVoiceBlob(blob) {
@@ -322,6 +402,7 @@
 
         if (!transcript) {
           setStatus("Could not transcribe — try again.");
+          if (aiSubEl) aiSubEl.textContent = "Ready to help";
           setBusy(false);
           recBtn.disabled = false;
           stopRecBtn.disabled = true;
@@ -335,11 +416,13 @@
           await speakEleven(replyText);
         } else {
           setStatus("No reply.");
+          if (aiSubEl) aiSubEl.textContent = "Ready to help";
           setBusy(false);
         }
       } catch (err) {
         console.error(err);
         setStatus("Error");
+        if (aiSubEl) aiSubEl.textContent = "Something went wrong";
         setBusy(false);
       } finally {
         recBtn.disabled = false;
