@@ -3,57 +3,66 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Roch Avatar Chat Test</title>
-
-  <!-- ✅ LiveKit client (LOCAL FILE – bulletproof) -->
-  <script defer src="/livekit-client.umd.min.js"></script>
-
-  <style>
-    /* your CSS */
-  </style>
-</head>
+  <title>Roch AI Receptionist Demo</title>
 
   <style>
     body { font-family: Arial, sans-serif; max-width: 860px; margin: 40px auto; padding: 0 16px; }
-    #chat { border: 1px solid #ddd; border-radius: 8px; padding: 12px; min-height: 220px; max-height: 360px; overflow:auto; }
-    .msg { margin: 10px 0; }
+    h1 { margin-top: 18px; }
+    #chat { border: 1px solid #ddd; border-radius: 8px; padding: 12px; min-height: 220px; max-height: 420px; overflow:auto; background:#fff; }
+    .msg { margin: 10px 0; line-height: 1.4; }
     .me { font-weight: 700; }
     .ai { font-weight: 700; }
-    textarea { width: 100%; height: 70px; padding: 10px; }
-    button { padding: 10px 14px; cursor: pointer; }
+    textarea { width: 100%; height: 70px; padding: 10px; border-radius: 10px; border: 1px solid #ddd; }
+    button { padding: 10px 14px; cursor: pointer; border-radius: 10px; border: 1px solid #ddd; background: #fff; }
+    button:hover { background: #f7f7f7; }
     button[disabled] { opacity: 0.5; cursor: not-allowed; }
     .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
-    input { padding: 8px; }
+    input { padding: 8px; border-radius: 10px; border: 1px solid #ddd; }
     small { color: #666; }
-    .hint { margin-top: 8px; }
-    .card { border:1px solid #eee; border-radius: 12px; padding:12px; }
-    #avatarWrap { display:flex; gap:16px; flex-wrap: wrap; align-items:flex-start; }
+    .hint { margin-top: 10px; }
+    .card { border:1px solid #eee; border-radius: 12px; padding:12px; background:#fafafa; }
 
-    /* ✅ Live video */
-    #avatarVideo {
-      width: 320px;
-      max-width: 100%;
+    /* Top bar */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      height: 64px;
+      background: #0f172a;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
       border-radius: 12px;
-      background: #000;
+      margin-bottom: 14px;
     }
-<header class="topbar">
-  <div class="topbar-left">
-    <div class="clinic-name">Roch Solutions Clinic</div>
-    <div class="subtitle">AI Receptionist</div>
-  </div>
-
-  <div class="topbar-right">
-    <span id="status" class="status ready">Ready</span>
-  </div>
-</header>
-
-    #status { min-height: 18px; }
-    #liveStatus { min-height: 18px; }
+    .topbar-left { display:flex; flex-direction:column; line-height:1.1; }
+    .clinic-name { font-weight:600; font-size:15px; }
+    .subtitle { font-size:12px; opacity:0.75; }
+    .status { font-size:12px; padding:6px 10px; border-radius:999px; font-weight:500; }
+    .status.ready { background: rgba(34,197,94,0.15); color:#22c55e; }
+    .status.thinking { background: rgba(234,179,8,0.15); color:#eab308; }
+    .status.speaking { background: rgba(59,130,246,0.15); color:#3b82f6; }
+    .status.error { background: rgba(239,68,68,0.15); color:#ef4444; }
   </style>
 </head>
+
 <body>
-  <h1>Roch Avatar Chat — Interactive Avatar (Mode 2)</h1>
-  <p><small>Text + Voice → AI brain → LiveAvatar (LiveKit). Fallback: Deepgram TTS</small></p>
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="clinic-name">Roch Solutions Clinic</div>
+      <div class="subtitle">AI Receptionist</div>
+    </div>
+    <div class="topbar-right">
+      <span id="status" class="status ready">Ready</span>
+    </div>
+  </header>
+
+  <h1>Roch AI Receptionist — Voice-First Demo</h1>
+  <p><small>Text + Voice → AI brain → ElevenLabs TTS (base64). No video, no LiveKit.</small></p>
 
   <div class="row">
     <label>Clinic ID:</label>
@@ -62,33 +71,7 @@
     <input id="sessionId" />
   </div>
 
-  <div id="avatarWrap" class="row">
-    <div class="card">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-        <strong>Avatar</strong>
-        <div style="display:flex; gap:10px; align-items:center;">
-          <button id="connectLiveBtn">🟢 Connect Live</button>
-          <button id="disconnectLiveBtn" disabled>🔴 Disconnect</button>
-        </div>
-      </div>
-
-      <div style="margin-top:8px;">
-        <small id="liveStatus">Not connected.</small>
-      </div>
-
-      <video id="avatarVideo" playsinline autoplay muted></video>
-
-      <div style="margin-top:8px;">
-        <label style="display:flex; align-items:center; gap:6px; font-size: 13px;">
-          <input type="checkbox" id="muteToggle" checked />
-          Muted (recommended)
-        </label>
-        <small style="display:block; margin-top:6px;">
-          Tip: Leave muted for autoplay. If you unmute, browsers may require a click each time.
-        </small>
-      </div>
-    </div>
-
+  <div class="row" style="margin-top:14px;">
     <div style="flex:1; min-width: 320px;">
       <div id="chat"></div>
 
@@ -100,15 +83,13 @@
         <button id="sendBtn">Send</button>
         <button id="recBtn">🎙 Record</button>
         <button id="stopRecBtn" disabled>⏹ Stop</button>
-        <span id="status"></span>
+        <button id="stopSpeakBtn">🔇 Stop voice</button>
       </div>
 
       <p class="hint">
         <small>
-          Live connect → <code>/avatar/live/start</code> → LiveKit WebRTC<br/>
-          Text → <code>/avatar/chat</code> (brain) → avatar speaks immediately<br/>
-          Voice → <code>/avatar/voice-turn</code> (STT+brain) → avatar speaks immediately<br/>
-          Fallback voice out → <code>/avatar/tts</code>
+          Text → <code>/avatar/chat</code> (brain) → ElevenLabs voice<br/>
+          Voice → <code>/avatar/voice-turn</code> (STT + brain) → ElevenLabs voice<br/>
         </small>
       </p>
     </div>
@@ -119,11 +100,6 @@
     // CONFIG
     // ---------------------------
     const BACKEND_BASE_URL = "https://rochsolutions-ai-receptionist.onrender.com";
-
-    // LiveKit UMD global can differ depending on build
-    function getLiveKitGlobal() {
-      return window.LiveKit || window.livekit || window.LivekitClient || null;
-    }
 
     // ---------------------------
     // SESSION
@@ -137,22 +113,25 @@
 
     const chat = document.getElementById("chat");
     const statusEl = document.getElementById("status");
-    const liveStatusEl = document.getElementById("liveStatus");
 
     const sendBtn = document.getElementById("sendBtn");
     const messageEl = document.getElementById("message");
 
     const recBtn = document.getElementById("recBtn");
     const stopRecBtn = document.getElementById("stopRecBtn");
+    const stopSpeakBtn = document.getElementById("stopSpeakBtn");
 
-    const videoEl = document.getElementById("avatarVideo");
-    const muteToggle = document.getElementById("muteToggle");
-    muteToggle.addEventListener("change", () => {
-      videoEl.muted = muteToggle.checked;
-    });
+    function setStatus(text) {
+      const t = text || "";
+      statusEl.textContent = t;
 
-    function setStatus(text) { statusEl.textContent = text || ""; }
-    function setLiveStatus(text) { liveStatusEl.textContent = text || ""; }
+      statusEl.classList.remove("ready","thinking","speaking","error");
+      const low = t.toLowerCase();
+      if (low.includes("think")) statusEl.classList.add("thinking");
+      else if (low.includes("speak") || low.includes("upload") || low.includes("record")) statusEl.classList.add("speaking");
+      else if (low.includes("error")) statusEl.classList.add("error");
+      else statusEl.classList.add("ready");
+    }
 
     function setBusy(isBusy) {
       sendBtn.disabled = isBusy;
@@ -177,183 +156,58 @@
     }
 
     // ---------------------------
-    // LIVEKIT / LIVEAVATAR (Mode 2)
+    // AUDIO (ElevenLabs via backend)
     // ---------------------------
-    let room = null;
-    let liveSession = null; // {liveavatar_session_id, livekit_url, livekit_token}
+    let currentAudio = null;
 
-    const connectBtn = document.getElementById("connectLiveBtn");
-    const disconnectBtn = document.getElementById("disconnectLiveBtn");
-
-    function roomOn(evt, fn) {
-      // Compatibility: constants OR string events
-      try { room.on(evt, fn); } catch {}
+    function stopSpeaking() {
+      if (currentAudio) {
+        try { currentAudio.pause(); } catch {}
+        currentAudio = null;
+      }
     }
 
-    async function connectLiveAvatar() {
-      const LK = getLiveKitGlobal();
-      if (!LK || !LK.Room) {
-        throw new Error("LiveKit client not found. Check the UMD <script> tag is loaded before this script.");
-      }
+    stopSpeakBtn.onclick = () => {
+      stopSpeaking();
+      setStatus("Ready");
+      setBusy(false);
+    };
 
-      const clinic_id = clinicIdInput.value.trim();
-      const session_id = sessionIdInput.value.trim();
+    async function speakEleven(text) {
+      if (!text) return;
 
-      setLiveStatus("Starting LiveAvatar session…");
+      stopSpeaking(); // prevent overlap
+      setStatus("Speaking…");
 
-      const res = await fetch(`${BACKEND_BASE_URL}/avatar/live/start`, {
+      const res = await fetch(`${BACKEND_BASE_URL}/avatar/tts-eleven`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clinic_id, session_id })
+        body: JSON.stringify({ text })
       });
 
       if (!res.ok) throw new Error(await res.text());
-      liveSession = await res.json();
+      const data = await res.json();
 
-      setLiveStatus("Connecting to LiveKit…");
+      const audio = new Audio(`data:${data.mime_type};base64,${data.audio_b64}`);
+      currentAudio = audio;
 
-      room = new LK.Room({
-        adaptiveStream: true,
-        dynacast: true
-      });
+      audio.onended = () => {
+        if (currentAudio === audio) currentAudio = null;
+        setStatus("Ready");
+        setBusy(false);
+      };
 
-      // Track subscribed (video)
-      const TRACK_EVT = (LK.RoomEvent && LK.RoomEvent.TrackSubscribed) || "trackSubscribed";
-      roomOn(TRACK_EVT, (track, publication, participant) => {
-        if (track && track.kind === "video") {
-          track.attach(videoEl);
-          // Ensure autoplay best practice
-          videoEl.muted = muteToggle.checked;
-          videoEl.play().catch(() => {});
-          setLiveStatus("Live Avatar connected ✅");
-        }
-      });
+      audio.onerror = () => {
+        if (currentAudio === audio) currentAudio = null;
+        setStatus("Ready");
+        setBusy(false);
+      };
 
-      // Disconnected
-      const DISC_EVT = (LK.RoomEvent && LK.RoomEvent.Disconnected) || "disconnected";
-      roomOn(DISC_EVT, () => {
-        setLiveStatus("Disconnected.");
-        connectBtn.disabled = false;
-        disconnectBtn.disabled = true;
-      });
-
-      // Optional: agent-response listener (useful for debugging)
-      const DATA_EVT = (LK.RoomEvent && LK.RoomEvent.DataReceived) || "dataReceived";
-      roomOn(DATA_EVT, (payload, participant, kind, topic) => {
-        if (topic !== "agent-response") return;
-        try {
-          const msg = JSON.parse(new TextDecoder().decode(payload));
-          // console.log("agent-response:", msg);
-        } catch {}
-      });
-
-    console.log("RAW livekit_url:", liveSession.livekit_url);
-
-    // LiveKit JS SDK expects HTTPS, not WSS
-    const lkUrl = liveSession.livekit_url.replace("wss://", "https://");
-
-    console.log("CONNECTING TO:", lkUrl);
-
-    await room.connect(lkUrl, liveSession.livekit_token);
-
-
-      connectBtn.disabled = true;
-      disconnectBtn.disabled = false;
-      setLiveStatus("Connected. Waiting for video…");
-    }
-
-    async function disconnectLiveAvatar() {
-      try {
-        if (room) {
-          room.disconnect();
-          room = null;
-        }
-      } finally {
-        connectBtn.disabled = false;
-        disconnectBtn.disabled = true;
-        setLiveStatus("Disconnected.");
-      }
-    }
-
-  // ✅ LiveKit v1-compatible speak command (HeyGen LiveAvatar) — multi-schema
-async function speakOnAvatar(text) {
-  if (!room || !text || !liveSession?.liveavatar_session_id) return false;
-
-  const payloads = [
-    // Variant 1
-    {
-      type: "avatar.speak_text",
-      session_id: liveSession.liveavatar_session_id,
-      text,
-      channel: "agent-control",
-    },
-    // Variant 2
-    {
-      event_type: "avatar.speak_text",
-      session_id: liveSession.liveavatar_session_id,
-      text,
-      channel: "agent-control",
-    },
-    // Variant 3
-    {
-      topic: "agent-control",
-      type: "avatar.speak_text",
-      session_id: liveSession.liveavatar_session_id,
-      text,
-    },
-  ];
-
-  for (const msg of payloads) {
-    try {
-      const bytes = new TextEncoder().encode(JSON.stringify(msg));
-      await room.localParticipant.publishData(bytes, true); // v1 signature
-      console.log("Sent speak payload:", msg);
-      return true;
-    } catch (e) {
-      console.warn("publishData failed:", e);
-    }
-  }
-
-  return false;
-}
-
-
-
-    connectBtn.onclick = () => {
-      connectLiveAvatar().catch(err => {
-        console.error(err);
-        setLiveStatus("Connect failed (check console).");
-      });
-    };
-
-    disconnectBtn.onclick = () => {
-      disconnectLiveAvatar().catch(err => console.error(err));
-    };
-
-    // ---------------------------
-    // DEEPGRAM TTS (fallback)
-    // ---------------------------
-    async function speakViaBackend(text) {
-      if (!text) return;
-      try {
-        const res = await fetch(`${BACKEND_BASE_URL}/avatar/tts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text })
-        });
-
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-
-        const audio = new Audio(`data:${data.mime_type};base64,${data.audio_b64}`);
-        await audio.play();
-      } catch (err) {
-        console.error("TTS error:", err);
-      }
+      await audio.play();
     }
 
     // ---------------------------
-    // TEXT CHAT -> speak (Mode 2)
+    // TEXT CHAT
     // ---------------------------
     async function send() {
       const clinic_id = clinicIdInput.value.trim();
@@ -361,6 +215,7 @@ async function speakOnAvatar(text) {
       const message = messageEl.value.trim();
       if (!message) return;
 
+      stopSpeaking(); // if user interrupts mid-speech
       addMsg("You", message);
       messageEl.value = "";
 
@@ -379,25 +234,16 @@ async function speakOnAvatar(text) {
         const replyText = data.reply_text || "(no reply)";
 
         addMsg("AI", replyText);
-
-        setStatus("Speaking…");
-        const ok = await speakOnAvatar(replyText);
-
-        if (!ok) {
-          setStatus("Avatar not connected — audio fallback…");
-          await speakViaBackend(replyText);
-        }
-
-        setStatus("OK");
+        await speakEleven(replyText);
       } catch (err) {
         console.error(err);
         setStatus("Error");
-      } finally {
         setBusy(false);
       }
     }
 
     sendBtn.onclick = send;
+
     messageEl.onkeydown = e => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -406,11 +252,13 @@ async function speakOnAvatar(text) {
     };
 
     // ---------------------------
-    // VOICE INPUT (STT + brain) -> speak (Mode 2)
+    // VOICE INPUT (STT + brain)
     // ---------------------------
     let mediaRecorder, audioChunks = [], stream;
 
     recBtn.onclick = async () => {
+      stopSpeaking();
+
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch (e) {
@@ -463,6 +311,9 @@ async function speakOnAvatar(text) {
 
         if (!transcript) {
           setStatus("Could not transcribe — try again.");
+          setBusy(false);
+          recBtn.disabled = false;
+          stopRecBtn.disabled = true;
           return;
         }
 
@@ -470,33 +321,23 @@ async function speakOnAvatar(text) {
 
         if (replyText) {
           addMsg("AI", replyText);
-          setStatus("Speaking…");
-
-          const ok = await speakOnAvatar(replyText);
-          if (!ok) {
-            setStatus("Avatar not connected — audio fallback…");
-            await speakViaBackend(replyText);
-          }
-          setStatus("OK");
+          await speakEleven(replyText);
         } else {
           setStatus("No reply.");
+          setBusy(false);
         }
       } catch (err) {
         console.error(err);
         setStatus("Error");
-      } finally {
         setBusy(false);
+      } finally {
         recBtn.disabled = false;
         stopRecBtn.disabled = true;
       }
     }
 
-    // ---------------------------
-    // Clean disconnect when leaving page (best effort)
-    // ---------------------------
-    window.addEventListener("beforeunload", () => {
-      try { if (room) room.disconnect(); } catch {}
-    });
+    // Initial status
+    setStatus("Ready");
   </script>
 </body>
 </html>
