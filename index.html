@@ -181,7 +181,7 @@
       filter: saturate(1.05) contrast(1.02);
     }
 
-    /* Speaking animation (no lipsync): subtle glow + micro zoom + bob */
+    /* Speaking glow + bob */
     .avatarOverlay{
       position:absolute;
       inset:0;
@@ -202,6 +202,30 @@
       0%,100%{ transform: scale(1.02) translateY(0); }
       50%{ transform: scale(1.035) translateY(-2px); }
     }
+
+    /* ✅ PSEUDO LIP-SYNC (overlay "mouth" driven by real audio amplitude) */
+    #mouthOverlay{
+      position:absolute;
+      left: 50%;
+      top: 66%;
+      width: 92px;
+      height: 34px;
+      transform: translate(-50%, -50%) scale(1,1);
+      border-radius: 999px;
+
+      /* subtle mouth look */
+      background: radial-gradient(60px 18px at 50% 45%, rgba(226,232,240,0.18), rgba(2,6,23,0.0) 70%);
+      box-shadow:
+        inset 0 0 0 2px rgba(226,232,240,0.32),
+        0 12px 30px rgba(2,6,23,0.40);
+
+      opacity: 0;
+      transition: opacity 160ms ease;
+      pointer-events: none;
+      mix-blend-mode: screen;
+      filter: blur(0.1px);
+    }
+    .avatarStage.speaking #mouthOverlay{ opacity: 1; }
 
     /* Mic button */
     .micBar{
@@ -256,10 +280,8 @@
       50%{ box-shadow: 0 20px 65px rgba(239,68,68,0.28); transform: scale(1.03); }
     }
 
-    /* Right side: quick actions + chat */
-    .side{
-      padding: 14px;
-    }
+    /* Right side */
+    .side{ padding: 14px; }
     .pillRow{
       display:flex;
       gap:10px;
@@ -407,13 +429,15 @@
               onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%221200%22 height=%221200%22><rect width=%221200%22 height=%221200%22 fill=%22%230f172a%22/><text x=%2250%25%22 y=%2252%25%22 font-size=%2272%22 text-anchor=%22middle%22 fill=%22%23e2e8f0%22 font-family=%22Arial%22>Avatar</text></svg>';"
             />
             <div class="avatarOverlay"></div>
+
+            <!-- ✅ pseudo lip-sync overlay (moves with audio amplitude) -->
+            <div id="mouthOverlay" aria-hidden="true"></div>
           </div>
         </div>
 
         <!-- Bottom mic bar -->
         <div class="micBar">
           <button id="micBtn" class="micButton" title="Hold to record / Click to start-stop">
-            <!-- mic icon -->
             <svg class="micIcon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a1 1 0 1 1 2 0 7 7 0 0 1-6 6.92V20h2a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2h2v-2.08A7 7 0 0 1 5 11a1 1 0 1 1 2 0 5 5 0 0 0 10 0z"/>
             </svg>
@@ -482,7 +506,7 @@
     const aiSubEl = document.getElementById("aiSub");
 
     const avatarStage = document.getElementById("avatarStage");
-    const avatarImg = document.getElementById("avatarImg");
+    const mouthOverlay = document.getElementById("mouthOverlay");
 
     const micBtn = document.getElementById("micBtn");
     const micHint = document.getElementById("micHint");
@@ -544,15 +568,28 @@
     }
 
     // ---------------------------
-    // Audio (ElevenLabs via backend)
+    // Audio (ElevenLabs via backend) + pseudo lip-sync
     // ---------------------------
     let currentAudio = null;
+    let mouthRafId = null;
+    let audioCtx = null;
+
+    function stopMouthAnim() {
+      if (mouthRafId) cancelAnimationFrame(mouthRafId);
+      mouthRafId = null;
+      if (mouthOverlay) mouthOverlay.style.transform = "translate(-50%, -50%) scale(1,1)";
+      if (audioCtx) {
+        try { audioCtx.close(); } catch {}
+        audioCtx = null;
+      }
+    }
 
     function stopSpeaking() {
       if (currentAudio) {
         try { currentAudio.pause(); } catch {}
         currentAudio = null;
       }
+      stopMouthAnim();
       avatarStage?.classList.remove("speaking");
       if (aiSubEl) aiSubEl.textContent = "Ready to help";
     }
@@ -585,8 +622,45 @@
       const audio = new Audio(`data:${data.mime_type};base64,${data.audio_b64}`);
       currentAudio = audio;
 
+      // ✅ WebAudio analyser to drive mouth overlay
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AudioCtx();
+      const src = audioCtx.createMediaElementSource(audio);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 1024;
+      src.connect(analyser);
+      analyser.connect(audioCtx.destination);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      function animateMouth() {
+        analyser.getByteTimeDomainData(dataArray);
+
+        // RMS amplitude
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const v = (dataArray[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / dataArray.length); // ~0..0.4 typical
+
+        // calibrate
+        const level = Math.min(1, rms * 8); // increase/decrease if needed
+
+        // map to mouth movement
+        const scaleY = 0.70 + level * 1.65;  // 0.70 .. 2.35
+        const scaleX = 1.00 - level * 0.14;  // slight squash
+
+        if (mouthOverlay) {
+          mouthOverlay.style.transform = `translate(-50%, -50%) scale(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)})`;
+        }
+
+        mouthRafId = requestAnimationFrame(animateMouth);
+      }
+
       const cleanup = () => {
         if (currentAudio === audio) currentAudio = null;
+        stopMouthAnim();
         avatarStage?.classList.remove("speaking");
         if (aiSubEl) aiSubEl.textContent = "Ready to help";
         setStatus("Ready");
@@ -596,7 +670,8 @@
       audio.onended = cleanup;
       audio.onerror = cleanup;
 
-      // play
+      await audioCtx.resume();
+      animateMouth();
       await audio.play();
     }
 
