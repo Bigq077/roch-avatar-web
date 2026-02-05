@@ -237,8 +237,10 @@
         } catch {}
       });
 
-      const lkUrl = liveSession.livekit_url.replace(/^wss:\/\//, "https://");
-      await room.connect(lkUrl, liveSession.livekit_token);
+     console.log("RAW livekit_url:", liveSession.livekit_url);
+     const lkUrl = liveSession.livekit_url.replace(/^wss:\/\//, "https://");
+     console.log("CONNECTING TO:", lkUrl);
+     await room.connect(lkUrl, liveSession.livekit_token);
 
 
       connectBtn.disabled = true;
