@@ -265,29 +265,48 @@
       }
     }
 
-  // ✅ LiveKit v1-compatible speak command (HeyGen LiveAvatar)
+  // ✅ LiveKit v1-compatible speak command (HeyGen LiveAvatar) — multi-schema
 async function speakOnAvatar(text) {
   if (!room || !text || !liveSession?.liveavatar_session_id) return false;
 
-  const msg = {
-    event_type: "avatar.speak_text",
-    session_id: liveSession.liveavatar_session_id,
-    text: text,
-    channel: "agent-control" // since v1 may not support topics
-  };
+  const payloads = [
+    // Variant 1
+    {
+      type: "avatar.speak_text",
+      session_id: liveSession.liveavatar_session_id,
+      text,
+      channel: "agent-control",
+    },
+    // Variant 2
+    {
+      event_type: "avatar.speak_text",
+      session_id: liveSession.liveavatar_session_id,
+      text,
+      channel: "agent-control",
+    },
+    // Variant 3
+    {
+      topic: "agent-control",
+      type: "avatar.speak_text",
+      session_id: liveSession.liveavatar_session_id,
+      text,
+    },
+  ];
 
-  try {
-    const bytes = new TextEncoder().encode(JSON.stringify(msg));
-
-    // ✅ LiveKit v1 signature: (payload, reliable:boolean)
-    await room.localParticipant.publishData(bytes, true);
-
-    return true;
-  } catch (e) {
-    console.warn("publishData failed:", e);
-    return false;
+  for (const msg of payloads) {
+    try {
+      const bytes = new TextEncoder().encode(JSON.stringify(msg));
+      await room.localParticipant.publishData(bytes, true); // v1 signature
+      console.log("Sent speak payload:", msg);
+      return true;
+    } catch (e) {
+      console.warn("publishData failed:", e);
+    }
   }
+
+  return false;
 }
+
 
 
     connectBtn.onclick = () => {
