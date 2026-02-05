@@ -250,6 +250,11 @@
 
     sendBtn.onclick = send;
 
+    document.getElementById("q1").onclick = () => { messageEl.value = "What services do you offer?"; send(); };
+    document.getElementById("q2").onclick = () => { messageEl.value = "Can I book an appointment?"; send(); };
+    document.getElementById("q3").onclick = () => { messageEl.value = "What are your opening hours?"; send(); };
+
+
     messageEl.onkeydown = e => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
