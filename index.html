@@ -21,37 +21,6 @@
     small { color: #666; }
     .hint { margin-top: 10px; }
     .card { border:1px solid #eee; border-radius: 12px; padding:12px; background:#fafafa; }
-    .avatarCard{
-  display:flex;
-  gap:12px;
-  align-items:center;
-  padding:12px;
-  border:1px solid #eee;
-  border-radius:12px;
-  background:#fafafa;
-  margin:12px 0;
-}
-
-.avatarImg{
-  width:72px;
-  height:72px;
-  border-radius:16px;
-  object-fit:cover;
-  border:1px solid #e5e7eb;
-  box-shadow:0 8px 24px rgba(2,6,23,0.10);
-}
-
-.avatarName{ font-weight:700; }
-.avatarSub{ font-size:12px; color:#64748b; }
-
-.avatarTalking{
-  animation: talkPulse 0.9s ease-in-out infinite;
-}
-
-@keyframes talkPulse{
-  0%,100%{ transform: translateY(0); }
-  50%{ transform: translateY(-2px); }
-}
 
     /* Top bar */
     .topbar {
@@ -79,44 +48,35 @@
     .status.speaking { background: rgba(59,130,246,0.15); color:#3b82f6; }
     .status.error { background: rgba(239,68,68,0.15); color:#ef4444; }
 
-    /* AI Face */
-    .ai-face {
+    /* Avatar card (REAL image) */
+    .avatarCard{
       display:flex;
-      gap:14px;
+      gap:12px;
       align-items:center;
-      margin-top: 12px;
-      margin-bottom: 12px;
+      padding:12px;
+      border:1px solid #eee;
+      border-radius:12px;
+      background:#fafafa;
+      margin:12px 0;
     }
-    .ai-avatar {
-      width: 92px;
-      height: 92px;
-      border-radius: 18px;
-      background: #0b1220;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      border: 1px solid #e5e7eb;
-      box-shadow: 0 8px 24px rgba(2,6,23,0.08);
-      overflow: hidden;
+    .avatarImg{
+      width:72px;
+      height:72px;
+      border-radius:16px;
+      object-fit:cover;
+      border:1px solid #e5e7eb;
+      box-shadow:0 8px 24px rgba(2,6,23,0.10);
+      background:#fff;
     }
-    .ai-meta { display:flex; flex-direction:column; gap:4px; }
-    .ai-title { font-weight: 700; font-size: 14px; }
-    .ai-sub { font-size: 12px; color: #64748b; }
+    .avatarName{ font-weight:700; }
+    .avatarSub{ font-size:12px; color:#64748b; }
 
-    .ai-avatar.speaking {
-      animation: avatarPulse 0.9s ease-in-out infinite;
+    .avatarTalking{
+      animation: talkPulse 0.9s ease-in-out infinite;
     }
-    @keyframes avatarPulse {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-2px); }
-    }
-    .ai-avatar.speaking svg #mouth {
-      transform-origin: 60px 81px;
-      animation: mouthTalk 0.18s ease-in-out infinite alternate;
-    }
-    @keyframes mouthTalk {
-      from { transform: scaleY(0.7); opacity: 0.9; }
-      to   { transform: scaleY(1.8); opacity: 1; }
+    @keyframes talkPulse{
+      0%,100%{ transform: translateY(0); }
+      50%{ transform: translateY(-2px); }
     }
   </style>
 </head>
@@ -146,37 +106,21 @@
   <div class="row" style="margin-top:14px;">
     <div style="flex:1; min-width: 320px;">
 
-      <!-- AI Face -->
-      <div class="ai-face card">
-        <div class="ai-avatar" id="aiAvatar" aria-label="AI receptionist avatar">
-          <svg viewBox="0 0 120 120" width="120" height="120">
-            <defs>
-              <linearGradient id="g" x1="0" x2="1">
-                <stop offset="0" stop-color="#1e293b"/>
-                <stop offset="1" stop-color="#0f172a"/>
-              </linearGradient>
-            </defs>
-            <circle cx="60" cy="60" r="54" fill="url(#g)"/>
-            <circle cx="43" cy="52" r="6" fill="#e2e8f0"/>
-            <circle cx="77" cy="52" r="6" fill="#e2e8f0"/>
-            <rect id="mouth" x="44" y="76" width="32" height="10" rx="5" fill="#e2e8f0"/>
-          </svg>
-        </div>
-        <div class="ai-meta">
-          <div class="ai-title">AI Receptionist</div>
-          <div class="ai-sub" id="aiSub">Ready to help</div>
+      <!-- ✅ Avatar (REAL image). Put avatar.png next to index.html on Netlify -->
+      <div class="avatarCard">
+        <img
+          src="./avatar.png"
+          class="avatarImg"
+          id="avatarImg"
+          alt="AI receptionist"
+          onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2272%22 height=%2272%22><rect width=%2272%22 height=%2272%22 rx=%2216%22 fill=%22%230f172a%22/><text x=%2236%22 y=%2242%22 font-size=%2222%22 text-anchor=%22middle%22 fill=%22%23e2e8f0%22 font-family=%22Arial%22>AI</text></svg>';"
+        />
+        <div>
+          <div class="avatarName">AI Receptionist</div>
+          <div class="avatarSub" id="aiSub">Ready to help</div>
         </div>
       </div>
 
-<div class="avatarCard">
-  <img src="./avatar.png" class="avatarImg" id="avatarImg" alt="AI receptionist" />
-  <div>
-    <div class="avatarName">AI Receptionist</div>
-    <div class="avatarSub" id="aiSub">Ready to help</div>
-  </div>
-</div>
-
-      
       <div id="chat"></div>
 
       <div class="row">
@@ -232,8 +176,8 @@
     const stopRecBtn = document.getElementById("stopRecBtn");
     const stopSpeakBtn = document.getElementById("stopSpeakBtn");
 
-    const aiAvatarEl = document.getElementById("aiAvatar");
     const aiSubEl = document.getElementById("aiSub");
+    const avatarImg = document.getElementById("avatarImg");
 
     function setStatus(text) {
       const t = text || "";
@@ -279,7 +223,7 @@
         try { currentAudio.pause(); } catch {}
         currentAudio = null;
       }
-      aiAvatarEl?.classList.remove("speaking");
+      avatarImg?.classList.remove("avatarTalking");
       if (aiSubEl) aiSubEl.textContent = "Ready to help";
     }
 
@@ -294,7 +238,7 @@
 
       stopSpeaking(); // prevent overlap
       setStatus("Speaking…");
-      aiAvatarEl?.classList.add("speaking");
+      avatarImg?.classList.add("avatarTalking");
       if (aiSubEl) aiSubEl.textContent = "Speaking…";
 
       const res = await fetch(`${BACKEND_BASE_URL}/avatar/tts-eleven`, {
@@ -309,21 +253,16 @@
       const audio = new Audio(`data:${data.mime_type};base64,${data.audio_b64}`);
       currentAudio = audio;
 
-      audio.onended = () => {
+      const cleanup = () => {
         if (currentAudio === audio) currentAudio = null;
-        aiAvatarEl?.classList.remove("speaking");
+        avatarImg?.classList.remove("avatarTalking");
         if (aiSubEl) aiSubEl.textContent = "Ready to help";
         setStatus("Ready");
         setBusy(false);
       };
 
-      audio.onerror = () => {
-        if (currentAudio === audio) currentAudio = null;
-        aiAvatarEl?.classList.remove("speaking");
-        if (aiSubEl) aiSubEl.textContent = "Ready to help";
-        setStatus("Ready");
-        setBusy(false);
-      };
+      audio.onended = cleanup;
+      audio.onerror = cleanup;
 
       await audio.play();
     }
