@@ -237,7 +237,9 @@
         } catch {}
       });
 
-      await room.connect(liveSession.livekit_url, liveSession.livekit_token);
+      const lkUrl = liveSession.livekit_url.replace(/^wss:\/\//, "https://");
+      await room.connect(lkUrl, liveSession.livekit_token);
+
 
       connectBtn.disabled = true;
       disconnectBtn.disabled = false;
