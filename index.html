@@ -9,11 +9,6 @@
   <script defer src="/livekit-client.umd.min.js"></script>
 
   <style>
-    /* your CSS */
-  </style>
-</head>
-
-  <style>
     body { font-family: Arial, sans-serif; max-width: 860px; margin: 40px auto; padding: 0 16px; }
     #chat { border: 1px solid #ddd; border-radius: 8px; padding: 12px; min-height: 220px; max-height: 360px; overflow:auto; }
     .msg { margin: 10px 0; }
@@ -28,438 +23,201 @@
     .hint { margin-top: 8px; }
     .card { border:1px solid #eee; border-radius: 12px; padding:12px; }
     #avatarWrap { display:flex; gap:16px; flex-wrap: wrap; align-items:flex-start; }
-
-    /* ✅ Live video */
-    #avatarVideo {
-      width: 320px;
-      max-width: 100%;
-      border-radius: 12px;
-      background: #000;
-    }
-
-    #status { min-height: 18px; }
-    #liveStatus { min-height: 18px; }
+    #avatarVideo { width: 320px; max-width: 100%; border-radius: 12px; background: #000; }
+    #status, #liveStatus { min-height: 18px; }
   </style>
 </head>
+
 <body>
-  <h1>Roch Avatar Chat — Interactive Avatar (Mode 2)</h1>
-  <p><small>Text + Voice → AI brain → LiveAvatar (LiveKit). Fallback: Deepgram TTS</small></p>
+<h1>Roch Avatar Chat — Interactive Avatar (Mode 2)</h1>
+<p><small>Text + Voice → AI brain → LiveAvatar (LiveKit)</small></p>
 
-  <div class="row">
-    <label>Clinic ID:</label>
-    <input id="clinicId" value="demo" />
-    <label>Session ID:</label>
-    <input id="sessionId" />
-  </div>
+<div class="row">
+  <label>Clinic ID:</label>
+  <input id="clinicId" value="demo" />
+  <label>Session ID:</label>
+  <input id="sessionId" />
+</div>
 
-  <div id="avatarWrap" class="row">
-    <div class="card">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
-        <strong>Avatar</strong>
-        <div style="display:flex; gap:10px; align-items:center;">
-          <button id="connectLiveBtn">🟢 Connect Live</button>
-          <button id="disconnectLiveBtn" disabled>🔴 Disconnect</button>
-        </div>
-      </div>
-
-      <div style="margin-top:8px;">
-        <small id="liveStatus">Not connected.</small>
-      </div>
-
-      <video id="avatarVideo" playsinline autoplay muted></video>
-
-      <div style="margin-top:8px;">
-        <label style="display:flex; align-items:center; gap:6px; font-size: 13px;">
-          <input type="checkbox" id="muteToggle" checked />
-          Muted (recommended)
-        </label>
-        <small style="display:block; margin-top:6px;">
-          Tip: Leave muted for autoplay. If you unmute, browsers may require a click each time.
-        </small>
-      </div>
+<div id="avatarWrap" class="row">
+  <div class="card">
+    <div class="row">
+      <strong>Avatar</strong>
+      <button id="connectLiveBtn">🟢 Connect Live</button>
+      <button id="disconnectLiveBtn" disabled>🔴 Disconnect</button>
     </div>
 
-    <div style="flex:1; min-width: 320px;">
-      <div id="chat"></div>
+    <small id="liveStatus">Not connected.</small>
+    <video id="avatarVideo" playsinline autoplay muted></video>
 
-      <div class="row">
-        <textarea id="message" placeholder="Type a question (e.g. 'What are your opening hours?')"></textarea>
-      </div>
-
-      <div class="row">
-        <button id="sendBtn">Send</button>
-        <button id="recBtn">🎙 Record</button>
-        <button id="stopRecBtn" disabled>⏹ Stop</button>
-        <span id="status"></span>
-      </div>
-
-      <p class="hint">
-        <small>
-          Live connect → <code>/avatar/live/start</code> → LiveKit WebRTC<br/>
-          Text → <code>/avatar/chat</code> (brain) → avatar speaks immediately<br/>
-          Voice → <code>/avatar/voice-turn</code> (STT+brain) → avatar speaks immediately<br/>
-          Fallback voice out → <code>/avatar/tts</code>
-        </small>
-      </p>
-    </div>
+    <label>
+      <input type="checkbox" id="muteToggle" checked />
+      Muted (recommended)
+    </label>
   </div>
 
-  <script>
-    // ---------------------------
-    // CONFIG
-    // ---------------------------
-    const BACKEND_BASE_URL = "https://rochsolutions-ai-receptionist.onrender.com";
+  <div style="flex:1; min-width:320px;">
+    <div id="chat"></div>
 
-    // LiveKit UMD global can differ depending on build
-    function getLiveKitGlobal() {
-      return window.LiveKit || window.livekit || window.LivekitClient || null;
+    <textarea id="message" placeholder="Type a question…"></textarea>
+
+    <div class="row">
+      <button id="sendBtn">Send</button>
+      <button id="recBtn">🎙 Record</button>
+      <button id="stopRecBtn" disabled>⏹ Stop</button>
+      <span id="status"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================= CONFIG ================= */
+const BACKEND_BASE_URL = "https://rochsolutions-ai-receptionist.onrender.com";
+
+/* ================= SESSION ================= */
+const sessionIdInput = document.getElementById("sessionId");
+const clinicIdInput = document.getElementById("clinicId");
+
+const existing = localStorage.getItem("roch_session_id");
+const newId = existing || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+localStorage.setItem("roch_session_id", newId);
+sessionIdInput.value = newId;
+
+/* ================= HELPERS ================= */
+const chat = document.getElementById("chat");
+const statusEl = document.getElementById("status");
+const liveStatusEl = document.getElementById("liveStatus");
+const messageEl = document.getElementById("message");
+const videoEl = document.getElementById("avatarVideo");
+
+function addMsg(who, text) {
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.innerHTML = `<b>${who}:</b> ${text}`;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+function setStatus(t){ statusEl.textContent = t || ""; }
+function setLiveStatus(t){ liveStatusEl.textContent = t || ""; }
+
+/* ================= LIVEKIT ================= */
+let room = null;
+let liveSession = null;
+
+function getLiveKit() {
+  return window.LiveKit || window.livekit || window.LivekitClient;
+}
+
+async function connectLiveAvatar() {
+  const LK = getLiveKit();
+  if (!LK || !LK.Room) {
+    setLiveStatus("LiveKit not loaded.");
+    return;
+  }
+
+  setLiveStatus("Starting session…");
+
+  const res = await fetch(`${BACKEND_BASE_URL}/avatar/live/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clinic_id: clinicIdInput.value,
+      session_id: sessionIdInput.value
+    })
+  });
+
+  liveSession = await res.json();
+
+  room = new LK.Room({ adaptiveStream: true, dynacast: true });
+
+  room.on("trackSubscribed", (track) => {
+    if (track.kind === "video") {
+      track.attach(videoEl);
+      videoEl.play().catch(()=>{});
+      setLiveStatus("Live Avatar connected ✅");
     }
+  });
 
-    // ---------------------------
-    // SESSION
-    // ---------------------------
-    const sessionIdInput = document.getElementById("sessionId");
-    const clinicIdInput = document.getElementById("clinicId");
-    const existing = localStorage.getItem("roch_session_id");
-    const newId = existing || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
-    localStorage.setItem("roch_session_id", newId);
-    sessionIdInput.value = newId;
+  room.on("dataReceived", (payload) => {
+    try {
+      JSON.parse(new TextDecoder().decode(payload));
+    } catch {}
+  });
 
-    const chat = document.getElementById("chat");
-    const statusEl = document.getElementById("status");
-    const liveStatusEl = document.getElementById("liveStatus");
+  room.on("disconnected", () => {
+    setLiveStatus("Disconnected.");
+  });
 
-    const sendBtn = document.getElementById("sendBtn");
-    const messageEl = document.getElementById("message");
+  await room.connect(liveSession.livekit_url, liveSession.livekit_token);
 
-    const recBtn = document.getElementById("recBtn");
-    const stopRecBtn = document.getElementById("stopRecBtn");
+  document.getElementById("connectLiveBtn").disabled = true;
+  document.getElementById("disconnectLiveBtn").disabled = false;
+}
 
-    const videoEl = document.getElementById("avatarVideo");
-    const muteToggle = document.getElementById("muteToggle");
-    muteToggle.addEventListener("change", () => {
-      videoEl.muted = muteToggle.checked;
-    });
+async function disconnectLiveAvatar() {
+  if (room) room.disconnect();
+  room = null;
+  setLiveStatus("Disconnected.");
+}
 
-    function setStatus(text) { statusEl.textContent = text || ""; }
-    function setLiveStatus(text) { liveStatusEl.textContent = text || ""; }
+/* ================= SPEAK (FIXED FOR v1) ================= */
+async function speakOnAvatar(text) {
+  if (!room || !text || !liveSession?.liveavatar_session_id) return false;
 
-    function setBusy(isBusy) {
-      sendBtn.disabled = isBusy;
-      recBtn.disabled = isBusy;
-      messageEl.disabled = isBusy;
-      clinicIdInput.disabled = isBusy;
-      sessionIdInput.disabled = isBusy;
-    }
+  const msg = {
+    event_type: "avatar.speak_text",
+    session_id: liveSession.liveavatar_session_id,
+    text: text,
+    channel: "agent-control"
+  };
 
-    function addMsg(who, text) {
-      const div = document.createElement("div");
-      div.className = "msg";
-      div.innerHTML = `<span class="${who === "You" ? "me" : "ai"}">${who}:</span> ${escapeHtml(text)}`;
-      chat.appendChild(div);
-      chat.scrollTop = chat.scrollHeight;
-    }
+  try {
+    const bytes = new TextEncoder().encode(JSON.stringify(msg));
+    await room.localParticipant.publishData(bytes, true);
+    return true;
+  } catch (e) {
+    console.warn("publishData failed:", e);
+    return false;
+  }
+}
 
-    function escapeHtml(str) {
-      return String(str).replace(/[&<>"']/g, m => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-      }[m]));
-    }
+/* ================= TEXT CHAT ================= */
+async function send() {
+  const message = messageEl.value.trim();
+  if (!message) return;
 
-    // ---------------------------
-    // LIVEKIT / LIVEAVATAR (Mode 2)
-    // ---------------------------
-    let room = null;
-    let liveSession = null; // {liveavatar_session_id, livekit_url, livekit_token}
+  addMsg("You", message);
+  messageEl.value = "";
+  setStatus("Thinking…");
 
-    const connectBtn = document.getElementById("connectLiveBtn");
-    const disconnectBtn = document.getElementById("disconnectLiveBtn");
+  const res = await fetch(`${BACKEND_BASE_URL}/avatar/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clinic_id: clinicIdInput.value,
+      session_id: sessionIdInput.value,
+      message
+    })
+  });
 
-    function roomOn(evt, fn) {
-      // Compatibility: constants OR string events
-      try { room.on(evt, fn); } catch {}
-    }
+  const data = await res.json();
+  addMsg("AI", data.reply_text);
 
-    async function connectLiveAvatar() {
-      const LK = getLiveKitGlobal();
-      if (!LK || !LK.Room) {
-        throw new Error("LiveKit client not found. Check the UMD <script> tag is loaded before this script.");
-      }
+  setStatus("Speaking…");
+  await speakOnAvatar(data.reply_text);
+  setStatus("OK");
+}
 
-      const clinic_id = clinicIdInput.value.trim();
-      const session_id = sessionIdInput.value.trim();
+/* ================= EVENTS ================= */
+document.getElementById("connectLiveBtn").onclick = connectLiveAvatar;
+document.getElementById("disconnectLiveBtn").onclick = disconnectLiveAvatar;
+document.getElementById("sendBtn").onclick = send;
+document.getElementById("muteToggle").onchange = e => videoEl.muted = e.target.checked;
 
-      setLiveStatus("Starting LiveAvatar session…");
-
-      const res = await fetch(`${BACKEND_BASE_URL}/avatar/live/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clinic_id, session_id })
-      });
-
-      if (!res.ok) throw new Error(await res.text());
-      liveSession = await res.json();
-
-      setLiveStatus("Connecting to LiveKit…");
-
-      room = new LK.Room({
-        adaptiveStream: true,
-        dynacast: true
-      });
-
-      // Track subscribed (video)
-      const TRACK_EVT = (LK.RoomEvent && LK.RoomEvent.TrackSubscribed) || "trackSubscribed";
-      roomOn(TRACK_EVT, (track, publication, participant) => {
-        if (track && track.kind === "video") {
-          track.attach(videoEl);
-          // Ensure autoplay best practice
-          videoEl.muted = muteToggle.checked;
-          videoEl.play().catch(() => {});
-          setLiveStatus("Live Avatar connected ✅");
-        }
-      });
-
-      // Disconnected
-      const DISC_EVT = (LK.RoomEvent && LK.RoomEvent.Disconnected) || "disconnected";
-      roomOn(DISC_EVT, () => {
-        setLiveStatus("Disconnected.");
-        connectBtn.disabled = false;
-        disconnectBtn.disabled = true;
-      });
-
-      // Optional: agent-response listener (useful for debugging)
-      const DATA_EVT = (LK.RoomEvent && LK.RoomEvent.DataReceived) || "dataReceived";
-      roomOn(DATA_EVT, (payload, participant, kind, topic) => {
-        if (topic !== "agent-response") return;
-        try {
-          const msg = JSON.parse(new TextDecoder().decode(payload));
-          // console.log("agent-response:", msg);
-        } catch {}
-      });
-
-      await room.connect(liveSession.livekit_url, liveSession.livekit_token);
-
-      connectBtn.disabled = true;
-      disconnectBtn.disabled = false;
-      setLiveStatus("Connected. Waiting for video…");
-    }
-
-    async function disconnectLiveAvatar() {
-      try {
-        if (room) {
-          room.disconnect();
-          room = null;
-        }
-      } finally {
-        connectBtn.disabled = false;
-        disconnectBtn.disabled = true;
-        setLiveStatus("Disconnected.");
-      }
-    }
-
-    // ✅ Correct FULL-mode speak command:
-    // topic: "agent-control"
-    // payload: { event_type, session_id, text }
-    async function speakOnAvatar(text) {
-      if (!room || !text || !liveSession?.liveavatar_session_id) return false;
-
-      const msg = {
-        event_type: "avatar.speak_text",
-        session_id: liveSession.liveavatar_session_id,
-        text: text
-      };
-
-      try {
-        const topic = "agent-control";
-        await room.localParticipant.publishData(
-          new TextEncoder().encode(JSON.stringify(msg)),
-          { reliable: true, topic }
-        );
-        return true;
-      } catch (e) {
-        console.warn("publishData failed:", e);
-        return false;
-      }
-    }
-
-    connectBtn.onclick = () => {
-      connectLiveAvatar().catch(err => {
-        console.error(err);
-        setLiveStatus("Connect failed (check console).");
-      });
-    };
-
-    disconnectBtn.onclick = () => {
-      disconnectLiveAvatar().catch(err => console.error(err));
-    };
-
-    // ---------------------------
-    // DEEPGRAM TTS (fallback)
-    // ---------------------------
-    async function speakViaBackend(text) {
-      if (!text) return;
-      try {
-        const res = await fetch(`${BACKEND_BASE_URL}/avatar/tts`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text })
-        });
-
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-
-        const audio = new Audio(`data:${data.mime_type};base64,${data.audio_b64}`);
-        await audio.play();
-      } catch (err) {
-        console.error("TTS error:", err);
-      }
-    }
-
-    // ---------------------------
-    // TEXT CHAT -> speak (Mode 2)
-    // ---------------------------
-    async function send() {
-      const clinic_id = clinicIdInput.value.trim();
-      const session_id = sessionIdInput.value.trim();
-      const message = messageEl.value.trim();
-      if (!message) return;
-
-      addMsg("You", message);
-      messageEl.value = "";
-
-      setBusy(true);
-      setStatus("Thinking…");
-
-      try {
-        const res = await fetch(`${BACKEND_BASE_URL}/avatar/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clinic_id, session_id, message })
-        });
-
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        const replyText = data.reply_text || "(no reply)";
-
-        addMsg("AI", replyText);
-
-        setStatus("Speaking…");
-        const ok = await speakOnAvatar(replyText);
-
-        if (!ok) {
-          setStatus("Avatar not connected — audio fallback…");
-          await speakViaBackend(replyText);
-        }
-
-        setStatus("OK");
-      } catch (err) {
-        console.error(err);
-        setStatus("Error");
-      } finally {
-        setBusy(false);
-      }
-    }
-
-    sendBtn.onclick = send;
-    messageEl.onkeydown = e => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        send();
-      }
-    };
-
-    // ---------------------------
-    // VOICE INPUT (STT + brain) -> speak (Mode 2)
-    // ---------------------------
-    let mediaRecorder, audioChunks = [], stream;
-
-    recBtn.onclick = async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (e) {
-        alert("Microphone permission denied.");
-        return;
-      }
-
-      audioChunks = [];
-      mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
-
-      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-
-      mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(audioChunks, { type: "audio/webm" });
-        await handleVoiceBlob(blob);
-      };
-
-      mediaRecorder.start();
-      recBtn.disabled = true;
-      stopRecBtn.disabled = false;
-      setStatus("Recording…");
-    };
-
-    stopRecBtn.onclick = () => {
-      mediaRecorder.stop();
-      stopRecBtn.disabled = true;
-      setStatus("Uploading…");
-    };
-
-    async function handleVoiceBlob(blob) {
-      setBusy(true);
-
-      try {
-        const fd = new FormData();
-        fd.append("clinic_id", clinicIdInput.value.trim());
-        fd.append("session_id", sessionIdInput.value.trim());
-        fd.append("audio", blob, "speech.webm");
-
-        const sttRes = await fetch(`${BACKEND_BASE_URL}/avatar/voice-turn`, {
-          method: "POST",
-          body: fd
-        });
-
-        if (!sttRes.ok) throw new Error(await sttRes.text());
-        const sttData = await sttRes.json();
-
-        const transcript = (sttData.transcript || "").trim();
-        const replyText = (sttData.reply_text || "").trim();
-
-        if (!transcript) {
-          setStatus("Could not transcribe — try again.");
-          return;
-        }
-
-        addMsg("You", transcript);
-
-        if (replyText) {
-          addMsg("AI", replyText);
-          setStatus("Speaking…");
-
-          const ok = await speakOnAvatar(replyText);
-          if (!ok) {
-            setStatus("Avatar not connected — audio fallback…");
-            await speakViaBackend(replyText);
-          }
-          setStatus("OK");
-        } else {
-          setStatus("No reply.");
-        }
-      } catch (err) {
-        console.error(err);
-        setStatus("Error");
-      } finally {
-        setBusy(false);
-        recBtn.disabled = false;
-        stopRecBtn.disabled = true;
-      }
-    }
-
-    // ---------------------------
-    // Clean disconnect when leaving page (best effort)
-    // ---------------------------
-    window.addEventListener("beforeunload", () => {
-      try { if (room) room.disconnect(); } catch {}
-    });
-  </script>
+/* ================= CLEANUP (NECESSARY) ================= */
+window.addEventListener("beforeunload", () => {
+  try { if (room) room.disconnect(); } catch {}
+});
+</script>
 </body>
 </html>
