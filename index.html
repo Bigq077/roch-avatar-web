@@ -550,24 +550,47 @@
     // ---------------------------
     // Two-frame "talking" animation
     // ---------------------------
-    let talkTimer = null;
+   let talkTimer = null;
+let talkOn = false;
 
-    function startTalkingAnim() {
-      stopTalkingAnim();
-      if (!avatarImg) return;
+// TUNE THESE (bigger = slower)
+const TALK_MIN_MS = 180;   // was 110
+const TALK_MAX_MS = 320;   // was 110
+const PAUSE_CHANCE = 0.22; // occasional hold like real speech
+const PAUSE_EXTRA_MS = 220;
 
-      let on = false;
-      talkTimer = setInterval(() => {
-        on = !on;
-        avatarImg.src = on ? AVATAR_TALK_SRC : AVATAR_IDLE_SRC;
-      }, 110); // 90–140ms: adjust for taste
-    }
+function startTalkingAnim() {
+  stopTalkingAnim();
+  if (!avatarImg) return;
 
-    function stopTalkingAnim() {
-      if (talkTimer) clearInterval(talkTimer);
-      talkTimer = null;
-      if (avatarImg) avatarImg.src = AVATAR_IDLE_SRC;
-    }
+  talkOn = true;
+
+  const step = () => {
+    if (!talkOn) return;
+
+    // More realistic than strict flip-flop:
+    // spend more time on "talk" than "idle"
+    const isTalk = Math.random() < 0.70; // 70% talk frames
+    avatarImg.src = isTalk ? AVATAR_TALK_SRC : AVATAR_IDLE_SRC;
+
+    // random delay for natural cadence
+    let delay = TALK_MIN_MS + Math.random() * (TALK_MAX_MS - TALK_MIN_MS);
+
+    // occasional micro-pause
+    if (Math.random() < PAUSE_CHANCE) delay += PAUSE_EXTRA_MS;
+
+    talkTimer = setTimeout(step, delay);
+  };
+
+  step();
+}
+
+function stopTalkingAnim() {
+  talkOn = false;
+  if (talkTimer) clearTimeout(talkTimer);
+  talkTimer = null;
+  if (avatarImg) avatarImg.src = AVATAR_IDLE_SRC;
+}
 
     // ---------------------------
     // Audio (ElevenLabs via backend)
