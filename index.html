@@ -6,7 +6,8 @@
   <title>Roch Avatar Chat Test</title>
 
   <!-- ✅ LiveKit client (Mode 2 / LiveAvatar) -->
-  <script src="https://unpkg.com/livekit-client/dist/livekit-client.umd.min.js"></script>
+  <!-- Pin version to avoid surprises -->
+  <script src="https://unpkg.com/livekit-client@2/dist/livekit-client.umd.min.js"></script>
 
   <style>
     body { font-family: Arial, sans-serif; max-width: 860px; margin: 40px auto; padding: 0 16px; }
@@ -105,6 +106,11 @@
     // ---------------------------
     const BACKEND_BASE_URL = "https://rochsolutions-ai-receptionist.onrender.com";
 
+    // LiveKit UMD global can differ depending on build
+    function getLiveKitGlobal() {
+      return window.LiveKit || window.livekit || window.LivekitClient || null;
+    }
+
     // ---------------------------
     // SESSION
     // ---------------------------
@@ -131,12 +137,8 @@
       videoEl.muted = muteToggle.checked;
     });
 
-    function setStatus(text) {
-      statusEl.textContent = text || "";
-    }
-    function setLiveStatus(text) {
-      liveStatusEl.textContent = text || "";
-    }
+    function setStatus(text) { statusEl.textContent = text || ""; }
+    function setLiveStatus(text) { liveStatusEl.textContent = text || ""; }
 
     function setBusy(isBusy) {
       sendBtn.disabled = isBusy;
@@ -169,7 +171,17 @@
     const connectBtn = document.getElementById("connectLiveBtn");
     const disconnectBtn = document.getElementById("disconnectLiveBtn");
 
+    function roomOn(evt, fn) {
+      // Compatibility: constants OR string events
+      try { room.on(evt, fn); } catch {}
+    }
+
     async function connectLiveAvatar() {
+      const LK = getLiveKitGlobal();
+      if (!LK || !LK.Room) {
+        throw new Error("LiveKit client not found. Check the UMD <script> tag is loaded before this script.");
+      }
+
       const clinic_id = clinicIdInput.value.trim();
       const session_id = sessionIdInput.value.trim();
 
@@ -186,31 +198,45 @@
 
       setLiveStatus("Connecting to LiveKit…");
 
-      room = new window.LivekitClient.Room({
+      room = new LK.Room({
         adaptiveStream: true,
         dynacast: true
       });
 
-      room.on(window.LivekitClient.RoomEvent.TrackSubscribed, (track) => {
-        if (track.kind === "video") {
-          // Attach avatar video to element
+      // Track subscribed (video)
+      const TRACK_EVT = (LK.RoomEvent && LK.RoomEvent.TrackSubscribed) || "trackSubscribed";
+      roomOn(TRACK_EVT, (track, publication, participant) => {
+        if (track && track.kind === "video") {
           track.attach(videoEl);
+          // Ensure autoplay best practice
+          videoEl.muted = muteToggle.checked;
+          videoEl.play().catch(() => {});
           setLiveStatus("Live Avatar connected ✅");
         }
       });
 
-      room.on(window.LivekitClient.RoomEvent.Disconnected, () => {
+      // Disconnected
+      const DISC_EVT = (LK.RoomEvent && LK.RoomEvent.Disconnected) || "disconnected";
+      roomOn(DISC_EVT, () => {
         setLiveStatus("Disconnected.");
         connectBtn.disabled = false;
         disconnectBtn.disabled = true;
+      });
+
+      // Optional: agent-response listener (useful for debugging)
+      const DATA_EVT = (LK.RoomEvent && LK.RoomEvent.DataReceived) || "dataReceived";
+      roomOn(DATA_EVT, (payload, participant, kind, topic) => {
+        if (topic !== "agent-response") return;
+        try {
+          const msg = JSON.parse(new TextDecoder().decode(payload));
+          // console.log("agent-response:", msg);
+        } catch {}
       });
 
       await room.connect(liveSession.livekit_url, liveSession.livekit_token);
 
       connectBtn.disabled = true;
       disconnectBtn.disabled = false;
-
-      // Some streams attach after a short delay
       setLiveStatus("Connected. Waiting for video…");
     }
 
@@ -227,13 +253,15 @@
       }
     }
 
-    // Send a speak command over the data channel.
-    // Topic/shape may vary by account; this is the most common pattern.
+    // ✅ Correct FULL-mode speak command:
+    // topic: "agent-control"
+    // payload: { event_type, session_id, text }
     async function speakOnAvatar(text) {
-      if (!room || !text) return false;
+      if (!room || !text || !liveSession?.liveavatar_session_id) return false;
 
       const msg = {
-        type: "avatar.speak_text",
+        event_type: "avatar.speak_text",
+        session_id: liveSession.liveavatar_session_id,
         text: text
       };
 
@@ -258,9 +286,7 @@
     };
 
     disconnectBtn.onclick = () => {
-      disconnectLiveAvatar().catch(err => {
-        console.error(err);
-      });
+      disconnectLiveAvatar().catch(err => console.error(err));
     };
 
     // ---------------------------
