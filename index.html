@@ -6,116 +6,450 @@
   <title>Roch AI Receptionist Demo</title>
 
   <style>
-    body { font-family: Arial, sans-serif; max-width: 860px; margin: 40px auto; padding: 0 16px; }
-    h1 { margin-top: 18px; }
-    #chat { border: 1px solid #ddd; border-radius: 8px; padding: 12px; min-height: 220px; max-height: 420px; overflow:auto; background:#fff; }
-    .msg { margin: 10px 0; line-height: 1.4; }
-    .me { font-weight: 700; }
-    .ai { font-weight: 700; }
-    textarea { width: 100%; height: 70px; padding: 10px; border-radius: 10px; border: 1px solid #ddd; }
-    button { padding: 10px 14px; cursor: pointer; border-radius: 10px; border: 1px solid #ddd; background: #fff; }
-    button:hover { background: #f7f7f7; }
-    button[disabled] { opacity: 0.5; cursor: not-allowed; }
-    .row { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
-    input { padding: 8px; border-radius: 10px; border: 1px solid #ddd; }
-    small { color: #666; }
-    .hint { margin-top: 10px; }
-    .card { border:1px solid #eee; border-radius: 12px; padding:12px; background:#fafafa; }
+    :root{
+      --bg:#0b1220;
+      --card:#0f172a;
+      --muted:#94a3b8;
+      --text:#e5e7eb;
+      --border:rgba(255,255,255,0.08);
+      --shadow:0 18px 60px rgba(2,6,23,0.35);
+      --accent:#22c55e;
+      --accent2:#3b82f6;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(1200px 700px at 20% 10%, rgba(59,130,246,0.18), transparent 55%),
+                  radial-gradient(1000px 600px at 90% 30%, rgba(34,197,94,0.14), transparent 60%),
+                  #070b14;
+      color: var(--text);
+    }
+
+    .wrap{
+      max-width: 980px;
+      margin: 22px auto;
+      padding: 0 18px 28px;
+    }
 
     /* Top bar */
     .topbar {
       position: sticky;
-      top: 0;
+      top: 10px;
       z-index: 100;
-      height: 64px;
-      background: #0f172a;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 20px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      border-radius: 12px;
-      margin-bottom: 14px;
+      height: 66px;
+      background: linear-gradient(180deg, rgba(15,23,42,0.96), rgba(15,23,42,0.86));
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding: 0 18px;
+      margin-bottom: 18px;
     }
-    .topbar-left { display:flex; flex-direction:column; line-height:1.1; }
-    .clinic-name { font-weight:600; font-size:15px; }
-    .subtitle { font-size:12px; opacity:0.75; }
+    .topbar-left{ display:flex; flex-direction:column; line-height:1.15; }
+    .clinic-name{ font-weight: 700; font-size: 15px; letter-spacing: 0.2px; }
+    .subtitle{ font-size: 12px; color: rgba(226,232,240,0.70); }
 
-    .status { font-size:12px; padding:6px 10px; border-radius:999px; font-weight:500; }
-    .status.ready { background: rgba(34,197,94,0.15); color:#22c55e; }
-    .status.thinking { background: rgba(234,179,8,0.15); color:#eab308; }
-    .status.speaking { background: rgba(59,130,246,0.15); color:#3b82f6; }
-    .status.error { background: rgba(239,68,68,0.15); color:#ef4444; }
+    .statusPill{
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    .dot{
+      width:10px;height:10px;border-radius:999px;
+      background: var(--accent);
+      box-shadow: 0 0 0 6px rgba(34,197,94,0.12);
+    }
+    .status{
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(2,6,23,0.45);
+      color: var(--text);
+      font-weight: 600;
+      letter-spacing: 0.2px;
+      min-width: 88px;
+      text-align: center;
+    }
+    .status.thinking{ border-color: rgba(234,179,8,0.30); color: #fbbf24; }
+    .status.speaking{ border-color: rgba(59,130,246,0.30); color: #93c5fd; }
+    .status.error{ border-color: rgba(239,68,68,0.35); color: #fca5a5; }
+    .dot.thinking{ background:#fbbf24; box-shadow:0 0 0 6px rgba(251,191,36,0.12); }
+    .dot.speaking{ background:#60a5fa; box-shadow:0 0 0 6px rgba(96,165,250,0.12); }
+    .dot.error{ background:#fb7185; box-shadow:0 0 0 6px rgba(251,113,133,0.12); }
 
-    
+    /* Layout */
+    .grid{
+      display:grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 16px;
+      align-items:start;
+    }
+    @media (max-width: 900px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+
+    .panel{
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(15,23,42,0.86), rgba(2,6,23,0.55));
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    /* Big avatar hero */
+    .hero{
+      position: relative;
+      padding: 16px;
+    }
+    .heroHeader{
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .heroTitle{
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+    .heroSub{
+      font-size: 12px;
+      color: rgba(226,232,240,0.70);
+      margin-top: 3px;
+    }
+
+    .idRow{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:flex-end;
+    }
+    .field{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(2,6,23,0.40);
+    }
+    .field label{
+      font-size: 12px;
+      color: rgba(226,232,240,0.72);
+      white-space: nowrap;
+    }
+    .field input{
+      width: 170px;
+      max-width: 46vw;
+      padding: 6px 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(15,23,42,0.7);
+      color: var(--text);
+      outline: none;
+    }
+
+    .avatarStage{
+      position: relative;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: radial-gradient(900px 420px at 30% 30%, rgba(59,130,246,0.18), transparent 55%),
+                  rgba(2,6,23,0.55);
+      height: 460px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    @media (max-width: 900px){
+      .avatarStage{ height: 420px; }
+    }
+
+    .avatarImg{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scale(1.02);
+      filter: saturate(1.05) contrast(1.02);
+    }
+
+    /* Speaking animation (no lipsync): subtle glow + micro zoom + bob */
+    .avatarOverlay{
+      position:absolute;
+      inset:0;
+      pointer-events:none;
+      background: radial-gradient(600px 300px at 50% 80%, rgba(34,197,94,0.16), transparent 55%),
+                  radial-gradient(700px 360px at 60% 20%, rgba(59,130,246,0.16), transparent 55%);
+      opacity: 0.0;
+      transition: opacity 200ms ease;
+      mix-blend-mode: screen;
+    }
+    .avatarStage.speaking .avatarOverlay{ opacity: 1; }
+
+    .avatarStage.speaking img{
+      animation: speakBob 0.95s ease-in-out infinite;
+      transform-origin: 50% 60%;
+    }
+    @keyframes speakBob{
+      0%,100%{ transform: scale(1.02) translateY(0); }
+      50%{ transform: scale(1.035) translateY(-2px); }
+    }
+
+    /* Mic button */
+    .micBar{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: 14px 16px 16px;
+      gap: 12px;
+    }
+
+    .micButton{
+      width: 74px;
+      height: 74px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: radial-gradient(circle at 30% 30%, rgba(59,130,246,0.35), rgba(15,23,42,0.65));
+      box-shadow: 0 18px 55px rgba(2,6,23,0.45);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      transition: transform 120ms ease, filter 120ms ease, opacity 120ms ease;
+      user-select:none;
+    }
+    .micButton:hover{ transform: translateY(-1px) scale(1.01); filter: brightness(1.04); }
+    .micButton:active{ transform: translateY(0px) scale(0.99); }
+    .micButton[disabled]{ opacity:0.55; cursor:not-allowed; }
+
+    .micIcon{
+      width: 30px;
+      height: 30px;
+      opacity: 0.95;
+      fill: #e2e8f0;
+    }
+
+    .micHint{
+      font-size: 12px;
+      color: rgba(226,232,240,0.70);
+      text-align:center;
+      max-width: 520px;
+      line-height: 1.35;
+    }
+
+    /* Recording pulse */
+    .micButton.recording{
+      background: radial-gradient(circle at 30% 30%, rgba(239,68,68,0.55), rgba(15,23,42,0.70));
+      animation: recPulse 0.9s ease-in-out infinite;
+      border-color: rgba(239,68,68,0.35);
+    }
+    @keyframes recPulse{
+      0%,100%{ box-shadow: 0 18px 55px rgba(239,68,68,0.18); transform: scale(1.0); }
+      50%{ box-shadow: 0 20px 65px rgba(239,68,68,0.28); transform: scale(1.03); }
+    }
+
+    /* Right side: quick actions + chat */
+    .side{
+      padding: 14px;
+    }
+    .pillRow{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-bottom: 12px;
+    }
+    .pill{
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(2,6,23,0.35);
+      color: rgba(226,232,240,0.92);
+      font-weight: 700;
+      font-size: 12px;
+      cursor:pointer;
+      transition: transform 120ms ease, background 120ms ease;
+    }
+    .pill:hover{ transform: translateY(-1px); background: rgba(15,23,42,0.55); }
+    .pill:active{ transform: translateY(0); }
+    .pill[disabled]{ opacity:0.55; cursor:not-allowed; }
+
+    .chatBox{
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      background: rgba(2,6,23,0.35);
+      padding: 12px;
+      min-height: 360px;
+      max-height: 520px;
+      overflow:auto;
+    }
+    .msg{ margin: 10px 0; line-height: 1.45; font-size: 13px; }
+    .me{ font-weight: 800; color: #93c5fd; }
+    .ai{ font-weight: 800; color: #86efac; }
+
+    .inputRow{
+      display:flex;
+      gap:10px;
+      margin-top: 10px;
+      align-items: stretch;
+    }
+    textarea{
+      flex:1;
+      resize: none;
+      height: 48px;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(15,23,42,0.55);
+      color: var(--text);
+      outline: none;
+      font-size: 13px;
+    }
+    .sendBtn{
+      width: 98px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(59,130,246,0.18);
+      color: rgba(226,232,240,0.95);
+      font-weight: 800;
+      cursor:pointer;
+      transition: transform 120ms ease, background 120ms ease;
+    }
+    .sendBtn:hover{ transform: translateY(-1px); background: rgba(59,130,246,0.24); }
+    .sendBtn:active{ transform: translateY(0); }
+    .sendBtn[disabled]{ opacity:0.55; cursor:not-allowed; }
+
+    .miniRow{
+      display:flex;
+      gap:10px;
+      margin-top: 10px;
+      align-items:center;
+      justify-content:space-between;
+      flex-wrap: wrap;
+    }
+    .ghostBtn{
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(2,6,23,0.25);
+      color: rgba(226,232,240,0.85);
+      font-weight: 700;
+      cursor:pointer;
+    }
+    .ghostBtn:hover{ background: rgba(15,23,42,0.45); }
+    .ghostBtn[disabled]{ opacity:0.55; cursor:not-allowed; }
+
+    .hint{
+      margin-top: 10px;
+      font-size: 12px;
+      color: rgba(226,232,240,0.60);
+      line-height: 1.35;
+    }
+    code{
+      background: rgba(255,255,255,0.06);
+      padding: 2px 6px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+  </style>
+</head>
 
 <body>
-  <!-- Top bar -->
-  <header class="topbar">
-    <div class="topbar-left">
-      <div class="clinic-name">Roch Solutions Clinic</div>
-      <div class="subtitle">AI Receptionist</div>
-    </div>
-    <div class="topbar-right">
-      <span id="status" class="status ready">Ready</span>
-    </div>
-  </header>
+  <div class="wrap">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="clinic-name">Roch Solutions Clinic</div>
+        <div class="subtitle">AI Receptionist</div>
+      </div>
 
-  <h1>Roch AI Receptionist — Voice-First Demo</h1>
-  <p><small>Text + Voice → AI brain → ElevenLabs TTS (base64). No video, no LiveKit.</small></p>
+      <div class="statusPill">
+        <span id="statusDot" class="dot"></span>
+        <span id="status" class="status ready">Ready</span>
+      </div>
+    </header>
 
-  <div class="row">
-    <label>Clinic ID:</label>
-    <input id="clinicId" value="demo" />
-    <label>Session ID:</label>
-    <input id="sessionId" />
-  </div>
+    <div class="grid">
 
-  <div class="row" style="margin-top:14px;">
-    <div style="flex:1; min-width: 320px;">
+      <!-- LEFT: Big Avatar -->
+      <section class="panel">
+        <div class="hero">
+          <div class="heroHeader">
+            <div>
+              <div class="heroTitle">Roch AI Receptionist</div>
+              <div class="heroSub" id="aiSub">Ready to help</div>
+            </div>
 
-      <!-- ✅ Avatar (REAL image). Put avatar.png next to index.html on Netlify -->
-      <div class="avatarCard">
-        <img
-          src="./avatar.png"
-          class="avatarImg"
-          id="avatarImg"
-          alt="AI receptionist"
-          onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2272%22 height=%2272%22><rect width=%2272%22 height=%2272%22 rx=%2216%22 fill=%22%230f172a%22/><text x=%2236%22 y=%2242%22 font-size=%2222%22 text-anchor=%22middle%22 fill=%22%23e2e8f0%22 font-family=%22Arial%22>AI</text></svg>';"
-        />
-        <div>
-          <div class="avatarName">AI Receptionist</div>
-          <div class="avatarSub" id="aiSub">Ready to help</div>
+            <div class="idRow">
+              <div class="field">
+                <label for="clinicId">Clinic ID</label>
+                <input id="clinicId" value="demo" />
+              </div>
+              <div class="field">
+                <label for="sessionId">Session ID</label>
+                <input id="sessionId" />
+              </div>
+            </div>
+          </div>
+
+          <div id="avatarStage" class="avatarStage" aria-label="AI receptionist avatar stage">
+            <img
+              src="./avatar.png"
+              id="avatarImg"
+              class="avatarImg"
+              alt="AI receptionist"
+              onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%221200%22 height=%221200%22><rect width=%221200%22 height=%221200%22 fill=%22%230f172a%22/><text x=%2250%25%22 y=%2252%25%22 font-size=%2272%22 text-anchor=%22middle%22 fill=%22%23e2e8f0%22 font-family=%22Arial%22>Avatar</text></svg>';"
+            />
+            <div class="avatarOverlay"></div>
+          </div>
         </div>
-      </div>
 
-      <div id="chat"></div>
+        <!-- Bottom mic bar -->
+        <div class="micBar">
+          <button id="micBtn" class="micButton" title="Hold to record / Click to start-stop">
+            <!-- mic icon -->
+            <svg class="micIcon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a1 1 0 1 1 2 0 7 7 0 0 1-6 6.92V20h2a1 1 0 1 1 0 2H9a1 1 0 1 1 0-2h2v-2.08A7 7 0 0 1 5 11a1 1 0 1 1 2 0 5 5 0 0 0 10 0z"/>
+            </svg>
+          </button>
 
-      <div class="row">
-        <textarea id="message" placeholder="Type a question (e.g. 'What are your opening hours?')"></textarea>
-      </div>
+          <div class="micHint" id="micHint">
+            Click to start recording, click again to stop. (If mic is flaky, just use the quick buttons.)
+          </div>
+        </div>
+      </section>
 
-      <div class="row">
-        <button id="sendBtn">Send</button>
-        <button id="recBtn">🎙 Record</button>
-        <button id="stopRecBtn" disabled>⏹ Stop</button>
-        <button id="stopSpeakBtn">🔇 Stop voice</button>
-      </div>
+      <!-- RIGHT: Chat + Quick actions -->
+      <section class="panel side">
+        <div class="pillRow">
+          <button id="q1" class="pill">Services</button>
+          <button id="q2" class="pill">Book appointment</button>
+          <button id="q3" class="pill">Opening hours</button>
+        </div>
 
-      <!-- Quick buttons -->
-      <div class="row">
-        <button id="q1">Services</button>
-        <button id="q2">Book appointment</button>
-        <button id="q3">Opening hours</button>
-      </div>
+        <div id="chat" class="chatBox"></div>
 
-      <p class="hint">
-        <small>
-          Text → <code>/avatar/chat</code> (brain) → ElevenLabs voice<br/>
-          Voice → <code>/avatar/voice-turn</code> (STT + brain) → ElevenLabs voice<br/>
-        </small>
-      </p>
+        <div class="inputRow">
+          <textarea id="message" placeholder="Type a question… (Enter to send, Shift+Enter for new line)"></textarea>
+          <button id="sendBtn" class="sendBtn">Send</button>
+        </div>
+
+        <div class="miniRow">
+          <button id="stopSpeakBtn" class="ghostBtn">🔇 Stop voice</button>
+          <button id="clearChatBtn" class="ghostBtn">🧹 Clear</button>
+        </div>
+
+        <div class="hint">
+          Uses <code>/avatar/chat</code> + <code>/avatar/voice-turn</code> + <code>/avatar/tts-eleven</code>. No video. No WebRTC.
+        </div>
+      </section>
+
     </div>
   </div>
 
@@ -126,46 +460,48 @@
     const BACKEND_BASE_URL = "https://rochsolutions-ai-receptionist.onrender.com";
 
     // ---------------------------
-    // SESSION
+    // ELEMENTS
     // ---------------------------
     const sessionIdInput = document.getElementById("sessionId");
     const clinicIdInput = document.getElementById("clinicId");
+
+    const chat = document.getElementById("chat");
+    const statusEl = document.getElementById("status");
+    const statusDot = document.getElementById("statusDot");
+
+    const sendBtn = document.getElementById("sendBtn");
+    const messageEl = document.getElementById("message");
+
+    const stopSpeakBtn = document.getElementById("stopSpeakBtn");
+    const clearChatBtn = document.getElementById("clearChatBtn");
+
+    const q1 = document.getElementById("q1");
+    const q2 = document.getElementById("q2");
+    const q3 = document.getElementById("q3");
+
+    const aiSubEl = document.getElementById("aiSub");
+
+    const avatarStage = document.getElementById("avatarStage");
+    const avatarImg = document.getElementById("avatarImg");
+
+    const micBtn = document.getElementById("micBtn");
+    const micHint = document.getElementById("micHint");
+
+    // ---------------------------
+    // SESSION ID
+    // ---------------------------
     const existing = localStorage.getItem("roch_session_id");
     const newId = existing || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
     localStorage.setItem("roch_session_id", newId);
     sessionIdInput.value = newId;
 
-    const chat = document.getElementById("chat");
-    const statusEl = document.getElementById("status");
-
-    const sendBtn = document.getElementById("sendBtn");
-    const messageEl = document.getElementById("message");
-
-    const recBtn = document.getElementById("recBtn");
-    const stopRecBtn = document.getElementById("stopRecBtn");
-    const stopSpeakBtn = document.getElementById("stopSpeakBtn");
-
-    const aiSubEl = document.getElementById("aiSub");
-    const avatarImg = document.getElementById("avatarImg");
-
-    function setStatus(text) {
-      const t = text || "";
-      statusEl.textContent = t;
-
-      statusEl.classList.remove("ready","thinking","speaking","error");
-      const low = t.toLowerCase();
-      if (low.includes("think")) statusEl.classList.add("thinking");
-      else if (low.includes("speak") || low.includes("upload") || low.includes("record")) statusEl.classList.add("speaking");
-      else if (low.includes("error")) statusEl.classList.add("error");
-      else statusEl.classList.add("ready");
-    }
-
-    function setBusy(isBusy) {
-      sendBtn.disabled = isBusy;
-      recBtn.disabled = isBusy;
-      messageEl.disabled = isBusy;
-      clinicIdInput.disabled = isBusy;
-      sessionIdInput.disabled = isBusy;
+    // ---------------------------
+    // UI helpers
+    // ---------------------------
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[m]));
     }
 
     function addMsg(who, text) {
@@ -176,14 +512,39 @@
       chat.scrollTop = chat.scrollHeight;
     }
 
-    function escapeHtml(str) {
-      return String(str).replace(/[&<>"']/g, m => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-      }[m]));
+    function setStatus(text) {
+      const t = text || "Ready";
+      statusEl.textContent = t;
+
+      statusEl.classList.remove("thinking","speaking","error");
+      statusDot.classList.remove("thinking","speaking","error");
+
+      const low = t.toLowerCase();
+      if (low.includes("think")) {
+        statusEl.classList.add("thinking");
+        statusDot.classList.add("thinking");
+      } else if (low.includes("speak") || low.includes("record") || low.includes("upload") || low.includes("listen")) {
+        statusEl.classList.add("speaking");
+        statusDot.classList.add("speaking");
+      } else if (low.includes("error")) {
+        statusEl.classList.add("error");
+        statusDot.classList.add("error");
+      }
+    }
+
+    function setBusy(isBusy) {
+      sendBtn.disabled = isBusy;
+      q1.disabled = isBusy;
+      q2.disabled = isBusy;
+      q3.disabled = isBusy;
+      messageEl.disabled = isBusy;
+      clinicIdInput.disabled = isBusy;
+      sessionIdInput.disabled = isBusy;
+      micBtn.disabled = isBusy;
     }
 
     // ---------------------------
-    // AUDIO (ElevenLabs via backend)
+    // Audio (ElevenLabs via backend)
     // ---------------------------
     let currentAudio = null;
 
@@ -192,7 +553,7 @@
         try { currentAudio.pause(); } catch {}
         currentAudio = null;
       }
-      avatarImg?.classList.remove("avatarTalking");
+      avatarStage?.classList.remove("speaking");
       if (aiSubEl) aiSubEl.textContent = "Ready to help";
     }
 
@@ -205,9 +566,11 @@
     async function speakEleven(text) {
       if (!text) return;
 
-      stopSpeaking(); // prevent overlap
+      // stop any current audio
+      stopSpeaking();
+
       setStatus("Speaking…");
-      avatarImg?.classList.add("avatarTalking");
+      avatarStage?.classList.add("speaking");
       if (aiSubEl) aiSubEl.textContent = "Speaking…";
 
       const res = await fetch(`${BACKEND_BASE_URL}/avatar/tts-eleven`, {
@@ -224,7 +587,7 @@
 
       const cleanup = () => {
         if (currentAudio === audio) currentAudio = null;
-        avatarImg?.classList.remove("avatarTalking");
+        avatarStage?.classList.remove("speaking");
         if (aiSubEl) aiSubEl.textContent = "Ready to help";
         setStatus("Ready");
         setBusy(false);
@@ -233,20 +596,36 @@
       audio.onended = cleanup;
       audio.onerror = cleanup;
 
+      // play
       await audio.play();
     }
 
     // ---------------------------
-    // TEXT CHAT
+    // Brain call
     // ---------------------------
-    async function send() {
+    async function callChat(message) {
       const clinic_id = clinicIdInput.value.trim();
       const session_id = sessionIdInput.value.trim();
-      const message = messageEl.value.trim();
-      if (!message) return;
 
-      stopSpeaking(); // if user interrupts mid-speech
-      addMsg("You", message);
+      const res = await fetch(`${BACKEND_BASE_URL}/avatar/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clinic_id, session_id, message })
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+      return await res.json(); // { reply_text }
+    }
+
+    // ---------------------------
+    // TEXT SEND
+    // ---------------------------
+    async function sendText(message) {
+      const msg = (message ?? "").trim();
+      if (!msg) return;
+
+      stopSpeaking();
+      addMsg("You", msg);
       messageEl.value = "";
 
       setBusy(true);
@@ -254,16 +633,8 @@
       if (aiSubEl) aiSubEl.textContent = "Thinking…";
 
       try {
-        const res = await fetch(`${BACKEND_BASE_URL}/avatar/chat`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clinic_id, session_id, message })
-        });
-
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        const replyText = data.reply_text || "(no reply)";
-
+        const data = await callChat(msg);
+        const replyText = (data.reply_text || "(no reply)").trim();
         addMsg("AI", replyText);
         await speakEleven(replyText);
       } catch (err) {
@@ -274,26 +645,48 @@
       }
     }
 
-    sendBtn.onclick = send;
+    sendBtn.onclick = () => sendText(messageEl.value);
 
-    // Quick buttons
-    document.getElementById("q1").onclick = () => { messageEl.value = "What services do you offer?"; send(); };
-    document.getElementById("q2").onclick = () => { messageEl.value = "Can I book an appointment?"; send(); };
-    document.getElementById("q3").onclick = () => { messageEl.value = "What are your opening hours?"; send(); };
-
-    messageEl.onkeydown = e => {
+    messageEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        send();
+        sendText(messageEl.value);
       }
+    });
+
+    // Quick buttons
+    q1.onclick = () => sendText("What services do you offer?");
+    q2.onclick = () => sendText("Can I book an appointment?");
+    q3.onclick = () => sendText("What are your opening hours?");
+
+    // Clear
+    clearChatBtn.onclick = () => {
+      chat.innerHTML = "";
+      addMsg("AI", "Hi — how can I help you today?");
     };
 
     // ---------------------------
-    // VOICE INPUT (STT + brain)
+    // VOICE INPUT: One-button record toggle
     // ---------------------------
-    let mediaRecorder, audioChunks = [], stream;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let stream = null;
+    let isRecording = false;
 
-    recBtn.onclick = async () => {
+    function setRecordingUI(on) {
+      isRecording = on;
+      if (on) {
+        micBtn.classList.add("recording");
+        setStatus("Recording…");
+        if (aiSubEl) aiSubEl.textContent = "Listening…";
+        if (micHint) micHint.textContent = "Recording… click again to stop.";
+      } else {
+        micBtn.classList.remove("recording");
+        if (micHint) micHint.textContent = "Click to start recording, click again to stop. (If mic is flaky, just use the quick buttons.)";
+      }
+    }
+
+    async function startRecording() {
       stopSpeaking();
 
       try {
@@ -309,23 +702,26 @@
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
 
       mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
+        try { stream.getTracks().forEach(t => t.stop()); } catch {}
         const blob = new Blob(audioChunks, { type: "audio/webm" });
         await handleVoiceBlob(blob);
       };
 
       mediaRecorder.start();
-      recBtn.disabled = true;
-      stopRecBtn.disabled = false;
-      setStatus("Recording…");
-      if (aiSubEl) aiSubEl.textContent = "Listening…";
-    };
+      setRecordingUI(true);
+    }
 
-    stopRecBtn.onclick = () => {
-      mediaRecorder.stop();
-      stopRecBtn.disabled = true;
+    function stopRecording() {
+      if (!mediaRecorder) return;
+      try { mediaRecorder.stop(); } catch {}
+      setRecordingUI(false);
       setStatus("Uploading…");
       if (aiSubEl) aiSubEl.textContent = "Processing…";
+    }
+
+    micBtn.onclick = async () => {
+      if (isRecording) stopRecording();
+      else await startRecording();
     };
 
     async function handleVoiceBlob(blob) {
@@ -349,11 +745,9 @@
         const replyText = (sttData.reply_text || "").trim();
 
         if (!transcript) {
-          setStatus("Could not transcribe — try again.");
+          setStatus("Could not transcribe");
           if (aiSubEl) aiSubEl.textContent = "Ready to help";
           setBusy(false);
-          recBtn.disabled = false;
-          stopRecBtn.disabled = true;
           return;
         }
 
@@ -363,7 +757,7 @@
           addMsg("AI", replyText);
           await speakEleven(replyText);
         } else {
-          setStatus("No reply.");
+          setStatus("No reply");
           if (aiSubEl) aiSubEl.textContent = "Ready to help";
           setBusy(false);
         }
@@ -373,13 +767,13 @@
         if (aiSubEl) aiSubEl.textContent = "Something went wrong";
         setBusy(false);
       } finally {
-        recBtn.disabled = false;
-        stopRecBtn.disabled = true;
+        setBusy(false);
       }
     }
 
-    // Initial status
+    // Initial
     setStatus("Ready");
+    addMsg("AI", "Hi — how can I help you today?");
   </script>
 </body>
 </html>
