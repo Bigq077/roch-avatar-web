@@ -398,11 +398,14 @@
 
           <div id="avatarStage" class="avatarStage" aria-label="AI receptionist avatar stage">
             <img
-              src="./avatar.png"
+             <img
+              src="./avatar_idle.png"
               id="avatarImg"
               class="avatarImg"
               alt="AI receptionist"
               onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%221200%22 height=%221200%22><rect width=%221200%22 height=%221200%22 fill=%22%230f172a%22/><text x=%2250%25%22 y=%2252%25%22 font-size=%2272%22 text-anchor=%22middle%22 fill=%22%23e2e8f0%22 font-family=%22Arial%22>Avatar</text></svg>';"
+              />
+
             />
             <div class="avatarOverlay"></div>
           </div>
@@ -457,7 +460,7 @@
     const BACKEND_BASE_URL = "https://rochsolutions-ai-receptionist.onrender.com";
 
     // ✅ Two-frame "talking" animation assets (put these next to index.html on Netlify)
-    const AVATAR_IDLE_SRC = "./avatar.png";
+    const AVATAR_IDLE_SRC = "./avatar_idle.png";
     const AVATAR_TALK_SRC = "./avatar_talk.png";
 
     // ---------------------------
