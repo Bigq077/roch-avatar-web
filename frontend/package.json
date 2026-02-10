@@ -1,1 +1,15 @@
+{
+  "name": "avatar-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@heygen/streaming-avatar": "^1.0.9"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}
 
