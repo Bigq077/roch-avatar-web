@@ -1,1 +1,148 @@
-
+{
+  "clinic": {
+    "name": "Theorem Health and Wellness",
+    "phone": "07870 166861",
+    "website": "https://theoremhealth.co.uk/",
+    "philosophy": "Just as a mathematical theorem combines principles for a proven solution, Theorem Health & Wellness integrates health and wellness interventions into a holistic path toward your complete well-being."
+  },
+  
+  "locations": [
+    {
+      "name": "Alcester",
+      "address": "Theorem Health and Wellness, Kinwarton Road, Alcester, B49 6AD"
+    },
+    {
+      "name": "Redditch",
+      "address": "Theorem Health and Wellness, 51 Bromsgrove Road, Redditch, B97 4RH"
+    }
+  ],
+  
+  "hours": {
+    "monday_to_friday": "8:30am - 9:00pm",
+    "weekends": "Closed",
+    "bank_holidays": "Closed"
+  },
+  
+  "services": [
+    {
+      "id": "physio_assessment",
+      "name": "Physiotherapy Assessment",
+      "duration_mins": 50,
+      "price_gbp": 75,
+      "description": "Holistic evaluation of physical mobility, strength, and emotional well-being through a psychotherapeutic lens. We'll identify the injury or issue and collaboratively formulate a tailored treatment plan.",
+      "includes": [
+        "Full assessment",
+        "Treatment plan formulation",
+        "May include manual therapy, soft tissue work",
+        "Can incorporate shockwave, acupuncture, or Class IV laser (additional £45)"
+      ],
+      "what_to_bring": "Wear shorts or loose clothing if possible (not essential)"
+    },
+    {
+      "id": "physio_followup",
+      "name": "Physiotherapy Follow-Up",
+      "duration_mins": 50,
+      "price_gbp": 75,
+      "description": "Track progress and adjust treatment plan. Re-evaluate mobility, strength, and overall well-being. Fine-tune interventions for optimal recovery.",
+      "includes": [
+        "Progress tracking",
+        "Treatment plan adjustment",
+        "Manual therapy, exercises, or advanced techniques as needed",
+        "Specialist referrals if needed (surgeon, GP, imaging)"
+      ]
+    },
+    {
+      "id": "prescribing",
+      "name": "Prescribing",
+      "duration_mins": null,
+      "price_gbp": 12.50,
+      "description": "Qualified prescribers can prescribe medications when appropriate (e.g., analgesia for pain management).",
+      "notes": "Always designed with safety and effectiveness in mind"
+    },
+    {
+      "id": "remedial_rehab",
+      "name": "Remedial Rehabilitation",
+      "duration_mins": 50,
+      "price_gbp": 65,
+      "description": "Expert rehabilitation instructors guide your ongoing recovery. May work in tandem with physiotherapist for coordinated care.",
+      "notes": "Ensures optimal results through expert guidance"
+    },
+    {
+      "id": "rehab_pt",
+      "name": "Rehabilitation PT",
+      "duration_mins": 50,
+      "price_gbp": 65,
+      "description": "Personal training focused on rehabilitation goals."
+    },
+    {
+      "id": "shockwave",
+      "name": "Shockwave Therapy",
+      "duration_mins": null,
+      "price_gbp": 45,
+      "is_surcharge": true,
+      "description": "Targeted sound waves stimulate healing in tissues, reducing pain and promoting recovery. Especially effective for chronic tendon issues.",
+      "notes": "Added to session cost when used"
+    },
+    {
+      "id": "laser",
+      "name": "Class IV Laser Therapy",
+      "duration_mins": null,
+      "price_gbp": 45,
+      "is_surcharge": true,
+      "description": "Powerful laser light alleviates pain, reduces inflammation, and speeds tissue repair. Reaches deep into the body for advanced healing.",
+      "notes": "Added to session cost when used"
+    },
+    {
+      "id": "acupuncture",
+      "name": "Acupuncture",
+      "duration_mins": null,
+      "price_gbp": null,
+      "description": "Fine needles placed at specific points to balance and stimulate the flow of energy (Qi). Promotes healing, reduces pain, improves overall well-being.",
+      "notes": "May be included in session or separate cost"
+    },
+    {
+      "id": "psychotherapy",
+      "name": "Psychotherapy",
+      "duration_mins": 50,
+      "price_gbp": null,
+      "description": "Safe space to explore thoughts and emotions using techniques like hypnotherapy and spiritual healing. Reduces stress, enhances mental well-being, fosters coping strategies.",
+      "notes": "Price to be confirmed"
+    }
+  ],
+  
+  "policies": {
+    "cancellation": {
+      "notice_hours": 24,
+      "policy": "Full fee charged if cancelled with less than 24 hours notice"
+    },
+    "insurance": {
+      "direct_billing": false,
+      "self_pay": true,
+      "bupa_accepted": false,
+      "notes": "Patients may claim back from their own insurers. We operate on self-pay model."
+    },
+    "booking": {
+      "advance_months": 6,
+      "system": "Acuity Scheduling",
+      "manual_approval_required": ["Insurance referrals"]
+    }
+  },
+  
+  "practitioners": [
+    {
+      "name": "Mark",
+      "days": ["Monday", "Tuesday", "Wednesday"]
+    },
+    {
+      "name": "Leanne",
+      "days": ["Thursday"]
+    }
+  ],
+  
+  "common_questions": {
+    "what_to_wear": "Shorts or loose clothing is helpful if you can, but don't worry if you can't.",
+    "first_visit": "Your first visit is a comprehensive assessment. We take a holistic approach looking at physical, emotional, and lifestyle factors.",
+    "recovery_time": "Everyone's recovery is different. We tailor treatment plans to each individual and adjust based on your progress.",
+    "referrals": "If we determine you need a specialist (surgeon, GP, imaging), we facilitate that referral and support your onward care."
+  }
+}
