@@ -271,73 +271,39 @@ async def chat(request: ChatRequest):
 # HEYGEN SESSION MANAGEMENT
 # ============================================================================
 
-@router.post("/session/start", response_model=HeyGenSessionResponse)
+@router.post("/session/start")
 async def start_session(request: HeyGenSessionRequest):
-    """Start HeyGen avatar session"""
-    
+    """Return a HeyGen session token for the browser SDK."""
+
     api_key = os.getenv("HEYGEN_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="HEYGEN_API_KEY not set")
-    
+
     headers = {
-        "X-Api-Key": api_key,
-        "Content-Type": "application/json"
+        "x-api-key": api_key,
+        "Content-Type": "application/json",
     }
-    
-    # Get voice ID based on mode
-    voice_id = os.getenv(
-        "ELEVENLABS_VOICE_ID_CLINIC" if request.mode == "clinic" 
-        else "ELEVENLABS_VOICE_ID_REHAB"
-    )
-    
-    payload = {
-        "avatar_id": request.avatar_id,
-        "quality": "high",
-        "voice": {"voice_id": voice_id} if voice_id else {}
-    }
-    
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                "https://api.heygen.com/v1/streaming.new",
+                "https://api.heygen.com/v1/streaming.create_token",
                 headers=headers,
-                json=payload
+                json={},
             )
             response.raise_for_status()
             data = response.json()
-            
-            return HeyGenSessionResponse(
-                session_id=data.get("session_id", ""),
-                ice_servers=data.get("ice_servers", []),
-                sdp=data.get("sdp", "")
-            )
+
+        token = (data.get("data") or {}).get("token")
+        if not token:
+            raise HTTPException(status_code=502, detail=f"HeyGen token missing: {data}")
+
+        return {"token": token}
+
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"HeyGen error: {str(e)}")
 
-@router.post("/session/stop")
-async def stop_session(session_id: str):
-    """Stop HeyGen session"""
     
-    api_key = os.getenv("HEYGEN_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="HEYGEN_API_KEY not set")
-    
-    headers = {
-        "X-Api-Key": api_key,
-        "Content-Type": "application/json"
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.heygen.com/v1/streaming.stop",
-                headers=headers,
-                json={"session_id": session_id}
-            )
-            response.raise_for_status()
-            return {"status": "stopped", "session_id": session_id}
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"HeyGen error: {str(e)}")
 
 # ============================================================================
 # HEALTH CHECK
