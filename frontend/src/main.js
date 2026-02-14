@@ -1,130 +1,267 @@
 import StreamingAvatar, { AvatarQuality, StreamingEvents } from "@heygen/streaming-avatar";
 
-const API_BASE = "http://localhost:8000";
+/**
+ * FIXES INCLUDED:
+ * - Wait for DOMContentLoaded before querying elements (prevents null.onclick crash)
+ * - Use VITE_API_URL if available, fallback to localhost
+ * - Use backend endpoints that actually exist in your repo (/api/heygen/session + /api/heygen/chat)
+ * - Replace broken SSE endpoint (/api/avatar/stream) with /api/heygen/chat (returns chunks)
+ * - Add hard "text-only fallback" mode if avatar init fails
+ * - Add optional Start Avatar button support (if present) without requiring it
+ * - Require HeyGen avatar id via Vite env (VITE_HEYGEN_AVATAR_ID_CLINIC / _REHAB) or it will run text-only
+ */
 
-const videoEl = document.getElementById("avatarVideo");
-const statusEl = document.getElementById("status");
-const logEl = document.getElementById("log");
-const inputEl = document.getElementById("msg");
-const sendBtn = document.getElementById("send");
+const API_BASE =
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL) ||
+  "http://localhost:8000";
+
+const MODE_DEFAULT =
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_AVATAR_MODE) ||
+  "clinic";
+
+const AVATAR_ID_CLINIC =
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_HEYGEN_AVATAR_ID_CLINIC) || "";
+
+const AVATAR_ID_REHAB =
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_HEYGEN_AVATAR_ID_REHAB) || "";
 
 let avatar = null;
 let sessionData = null;
 
 let speakQueue = [];
 let isSpeaking = false;
+let avatarReady = false;
+let textOnly = false;
 
-// --- 1) Connect avatar session ASAP (page load) ---
-async function initAvatar() {
-  statusEl.textContent = "Connecting avatar…";
-
-  // Create session server-side (keeps HEYGEN_API_KEY private)
-  const res = await fetch(`${API_BASE}/api/heygen/session`, { method: "POST" });
-  sessionData = await res.json();
-
-  // Initialize SDK with returned session data
-  avatar = new StreamingAvatar({ token: sessionData.data?.token || sessionData.token }); 
-  // ^ token field depends on HeyGen response; map it once you see your payload.
-
-  // Listen for speaking events so we can feed chunks without overlap
-  avatar.on(StreamingEvents.AVATAR_START_TALKING, () => { isSpeaking = true; });
-  avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-    isSpeaking = false;
-    pumpQueue();
-  });
-
-  // Start stream (quality low = faster)
-  const stream = await avatar.createStartAvatar({
-    quality: AvatarQuality.Low,
-    // avatarId: "...", voiceId: "...", etc per your HeyGen config
-  });
-
-  // Attach WebRTC video stream to <video>
-  videoEl.srcObject = stream;
-
-  statusEl.textContent = "Ready";
+function byId(id) {
+  return document.getElementById(id);
 }
 
+function setStatus(el, txt) {
+  if (el) el.textContent = txt;
+}
+
+function appendLog(el, txt) {
+  if (!el) return;
+  el.textContent += txt;
+  el.scrollTop = el.scrollHeight;
+}
+
+function getAvatarIdForMode(mode) {
+  return mode === "rehab" ? AVATAR_ID_REHAB : AVATAR_ID_CLINIC;
+}
+
+/**
+ * Speak queue utilities
+ */
 function enqueueSpeak(text) {
-  const cleaned = text.trim();
+  const cleaned = (text || "").trim();
   if (!cleaned) return;
   speakQueue.push(cleaned);
   pumpQueue();
 }
 
 async function pumpQueue() {
+  if (textOnly) return;
   if (!avatar) return;
   if (isSpeaking) return;
   const next = speakQueue.shift();
   if (!next) return;
 
-  statusEl.textContent = "Speaking…";
   try {
-    // Speak text through HeyGen
     await avatar.speak({ text: next });
   } catch (e) {
-    statusEl.textContent = "Text-only fallback (avatar error)";
-    logEl.textContent += `\n[Avatar error] ${String(e)}`;
+    textOnly = true;
+    // no logEl here; caller will show text anyway
+    // keep queue but stop speaking attempts
   }
 }
 
-// --- 2) Stream LLM output (SSE) and chunk it into speakable pieces ---
-async function sendMessage(message) {
-  logEl.textContent += `\n\nYou: ${message}\nAvatar: `;
+/**
+ * Create HeyGen session + start WebRTC stream.
+ * Requires:
+ * - backend running
+ * - /api/heygen/session returns token
+ * - VITE_HEYGEN_AVATAR_ID_* set (otherwise we run text-only)
+ */
+async function initAvatar({ videoEl, statusEl, mode }) {
+  const avatarId = getAvatarIdForMode(mode);
 
-  const url = new URL(`${API_BASE}/api/avatar/stream`);
-  url.searchParams.set("mode", "clinic");
-  url.searchParams.set("message", message);
+  if (!avatarId) {
+    textOnly = true;
+    setStatus(statusEl, "Text-only mode (missing HeyGen avatar id in frontend .env)");
+    return;
+  }
 
-  const evtSource = new EventSource(url.toString());
+  try {
+    setStatus(statusEl, "Connecting avatar…");
 
-  let buffer = "";
-  let spokenSoFar = "";
+    // Create session server-side (keeps HEYGEN_API_KEY private)
+    const res = await fetch(`${API_BASE}/api/heygen/session`, { method: "POST" });
+    if (!res.ok) {
+      const errTxt = await res.text().catch(() => "");
+      throw new Error(`Session failed (${res.status}): ${errTxt}`);
+    }
+    sessionData = await res.json();
 
-  // chunk rules (latency target):
-  // - speak when we have a full sentence OR ~16 words
-  const shouldFlush = (txt) => {
-    const words = txt.trim().split(/\s+/).filter(Boolean);
-    const hasSentenceEnd = /[.?!:]\s$/.test(txt);
-    return hasSentenceEnd || words.length >= 16;
-  };
+    // Token mapping: support a couple shapes
+    const token =
+      sessionData?.data?.token ||
+      sessionData?.token ||
+      sessionData?.data?.session?.token ||
+      sessionData?.data?.data?.token;
 
-  evtSource.onmessage = (ev) => {
-    if (ev.data === "[DONE]") {
-      evtSource.close();
-      // flush remainder
-      if (buffer.trim()) enqueueSpeak(buffer);
-      statusEl.textContent = "Ready";
-      return;
+    if (!token) {
+      throw new Error(`No token found in /api/heygen/session response`);
     }
 
-    buffer += ev.data;           // token
-    buffer += " ";
+    avatar = new StreamingAvatar({ token });
 
-    // update on-screen transcript immediately
-    logEl.textContent += ev.data + " ";
+    avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
+      isSpeaking = true;
+      setStatus(statusEl, "Speaking…");
+    });
 
-    // speak early: first sentence ASAP, then continue in chunks
-    if (shouldFlush(buffer)) {
-      enqueueSpeak(buffer);
-      spokenSoFar += buffer;
-      buffer = "";
+    avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+      isSpeaking = false;
+      setStatus(statusEl, "Ready");
+      pumpQueue();
+    });
+
+    // Start stream (low quality = faster). Provide avatarId.
+    const stream = await avatar.createStartAvatar({
+      quality: AvatarQuality.Low,
+      avatarId,
+    });
+
+    if (videoEl) {
+      videoEl.autoplay = true;
+      videoEl.playsInline = true;
+      videoEl.srcObject = stream;
+      await videoEl.play().catch(() => {});
     }
-  };
 
-  evtSource.onerror = () => {
-    evtSource.close();
-    statusEl.textContent = "Text-only fallback (stream error)";
-  };
+    avatarReady = true;
+    textOnly = false;
+    setStatus(statusEl, "Ready");
+  } catch (e) {
+    textOnly = true;
+    avatarReady = false;
+    setStatus(statusEl, `Text-only fallback (avatar init error)`);
+    // caller logs details
+    throw e;
+  }
 }
 
-sendBtn.onclick = () => {
-  const msg = inputEl.value.trim();
-  if (!msg) return;
-  inputEl.value = "";
-  sendMessage(msg);
-};
+/**
+ * Send a message to backend and speak chunks (non-streaming but low perceived latency).
+ * Uses POST /api/heygen/chat which should return:
+ * { response, chunks: [..], safety, meta }
+ */
+async function sendMessage({ message, mode, logEl, statusEl }) {
+  appendLog(logEl, `\n\nYou: ${message}\nAvatar: `);
+  setStatus(statusEl, "Thinking…");
 
-// Start the avatar immediately to avoid first-message WebRTC delay
-initAvatar();
+  try {
+    const res = await fetch(`${API_BASE}/api/heygen/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode,
+        message,
+        history: [],
+      }),
+    });
 
+    if (!res.ok) {
+      const errTxt = await res.text().catch(() => "");
+      throw new Error(`Chat failed (${res.status}): ${errTxt}`);
+    }
+
+    const data = await res.json();
+
+    const full = (data?.response || "").trim();
+    const chunks = Array.isArray(data?.chunks) ? data.chunks : [];
+
+    // Update transcript immediately
+    appendLog(logEl, full ? `${full}\n` : `[No response]\n`);
+
+    // Speak in chunks (if avatar is available)
+    if (!textOnly && avatarReady && chunks.length) {
+      chunks.forEach((c) => enqueueSpeak(c));
+      setStatus(statusEl, "Speaking…");
+    } else {
+      setStatus(statusEl, "Ready");
+    }
+  } catch (e) {
+    setStatus(statusEl, "Text-only fallback (chat error)");
+    appendLog(logEl, `\n[Chat error] ${String(e)}\n`);
+  }
+}
+
+/**
+ * Bootstraps after DOM is ready so IDs exist.
+ */
+window.addEventListener("DOMContentLoaded", async () => {
+  const videoEl = byId("avatarVideo");
+  const statusEl = byId("status");
+  const logEl = byId("log");
+  const inputEl = byId("msg");
+  const sendBtn = byId("send");
+
+  // Optional start button + mode selector if you have them in HTML
+  const startBtn = byId("startAvatar"); // optional
+  const modeSelect = byId("mode"); // optional <select id="mode"><option value="clinic">...</option>...</select>
+
+  if (!statusEl || !logEl || !inputEl || !sendBtn) {
+    throw new Error(
+      "Missing required UI elements. Ensure index.html includes ids: status, log, msg, send (and avatarVideo optional)."
+    );
+  }
+
+  let mode = modeSelect?.value || MODE_DEFAULT;
+
+  // If you have a mode select, update mode
+  if (modeSelect) {
+    modeSelect.addEventListener("change", () => {
+      mode = modeSelect.value;
+      setStatus(statusEl, "Mode changed. Ready.");
+    });
+  }
+
+  // If you want to auto-init avatar on load (reduces first-message WebRTC delay)
+  // But if avatar IDs aren't configured, it will fall back to text-only.
+  try {
+    await initAvatar({ videoEl, statusEl, mode });
+  } catch (e) {
+    appendLog(logEl, `\n[Avatar init error] ${String(e)}\n`);
+  }
+
+  // Optional "Start Avatar" button behavior (if present in HTML)
+  if (startBtn) {
+    startBtn.onclick = async () => {
+      try {
+        textOnly = false;
+        await initAvatar({ videoEl, statusEl, mode });
+      } catch (e) {
+        appendLog(logEl, `\n[Avatar init error] ${String(e)}\n`);
+      }
+    };
+  }
+
+  // Send message click
+  sendBtn.onclick = () => {
+    const msg = inputEl.value.trim();
+    if (!msg) return;
+    inputEl.value = "";
+    sendMessage({ message: msg, mode, logEl, statusEl });
+  };
+
+  // Enter-to-send
+  inputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      sendBtn.click();
+    }
+  });
+});
