@@ -1,14 +1,15 @@
 import StreamingAvatar, { AvatarQuality, StreamingEvents } from "@heygen/streaming-avatar";
 
 /**
- * FIXES INCLUDED:
- * - Wait for DOMContentLoaded before querying elements (prevents null.onclick crash)
- * - Use VITE_API_URL if available, fallback to localhost
- * - Use backend endpoints that actually exist in your repo (/api/heygen/session + /api/heygen/chat)
- * - Replace broken SSE endpoint (/api/avatar/stream) with /api/heygen/chat (returns chunks)
- * - Add hard "text-only fallback" mode if avatar init fails
- * - Add optional Start Avatar button support (if present) without requiring it
- * - Require HeyGen avatar id via Vite env (VITE_HEYGEN_AVATAR_ID_CLINIC / _REHAB) or it will run text-only
+ * UPDATED FIXES:
+ * - Uses your REAL backend endpoints:
+ *   ✅ POST /api/heygen/session/start  (requires { avatar_id, mode })
+ *   ✅ POST /api/heygen/chat
+ * - Supports token returned either as:
+ *   { token: "..." }  OR  { data: { token: "..." } }  OR  { data: { token: { token: "..." } } }
+ * - If backend does NOT return a token, it falls back to text-only and logs the payload,
+ *   so you can see exactly what your backend returned.
+ * - Waits for DOMContentLoaded before wiring UI.
  */
 
 const API_BASE =
@@ -52,6 +53,23 @@ function getAvatarIdForMode(mode) {
 }
 
 /**
+ * Try to extract a HeyGen token from various possible payload shapes.
+ * You can extend this if your backend returns a different structure.
+ */
+function extractToken(payload) {
+  // most common shapes
+  if (payload?.token && typeof payload.token === "string") return payload.token;
+  if (payload?.data?.token && typeof payload.data.token === "string") return payload.data.token;
+
+  // sometimes nested token objects
+  if (payload?.data?.token?.token && typeof payload.data.token.token === "string") return payload.data.token.token;
+  if (payload?.data?.data?.token && typeof payload.data.data.token === "string") return payload.data.data.token;
+
+  // fallback: nothing found
+  return null;
+}
+
+/**
  * Speak queue utilities
  */
 function enqueueSpeak(text) {
@@ -72,19 +90,20 @@ async function pumpQueue() {
     await avatar.speak({ text: next });
   } catch (e) {
     textOnly = true;
-    // no logEl here; caller will show text anyway
-    // keep queue but stop speaking attempts
   }
 }
 
 /**
  * Create HeyGen session + start WebRTC stream.
- * Requires:
- * - backend running
- * - /api/heygen/session returns token
- * - VITE_HEYGEN_AVATAR_ID_* set (otherwise we run text-only)
+ * Uses your backend:
+ *   POST /api/heygen/session/start  { avatar_id, mode }
+ *
+ * IMPORTANT:
+ * The @heygen/streaming-avatar SDK expects a TOKEN.
+ * Your backend MUST return a token somewhere in the JSON.
+ * If it doesn't, we log the payload and fall back to text-only.
  */
-async function initAvatar({ videoEl, statusEl, mode }) {
+async function initAvatar({ videoEl, statusEl, logEl, mode }) {
   const avatarId = getAvatarIdForMode(mode);
 
   if (!avatarId) {
@@ -96,23 +115,39 @@ async function initAvatar({ videoEl, statusEl, mode }) {
   try {
     setStatus(statusEl, "Connecting avatar…");
 
-    // Create session server-side (keeps HEYGEN_API_KEY private)
-    const res = await fetch(`${API_BASE}/api/heygen/session`, { method: "POST" });
+    const res = await fetch(`${API_BASE}/api/heygen/session/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        avatar_id: avatarId,
+        mode, // "clinic" or "rehab"
+      }),
+    });
+
     if (!res.ok) {
       const errTxt = await res.text().catch(() => "");
       throw new Error(`Session failed (${res.status}): ${errTxt}`);
     }
+
     sessionData = await res.json();
 
-    // Token mapping: support a couple shapes
-    const token =
-      sessionData?.data?.token ||
-      sessionData?.token ||
-      sessionData?.data?.session?.token ||
-      sessionData?.data?.data?.token;
+    const token = extractToken(sessionData);
 
     if (!token) {
-      throw new Error(`No token found in /api/heygen/session response`);
+      // This means your backend is not returning a token the JS SDK can use.
+      // We'll fall back to text-only and print the payload for debugging.
+      textOnly = true;
+      avatarReady = false;
+      setStatus(statusEl, "Text-only fallback (no HeyGen token returned)");
+      appendLog(
+        logEl,
+        `\n[Avatar init error] No token returned from /api/heygen/session/start.\nPayload:\n${JSON.stringify(
+          sessionData,
+          null,
+          2
+        )}\n`
+      );
+      return;
     }
 
     avatar = new StreamingAvatar({ token });
@@ -128,7 +163,6 @@ async function initAvatar({ videoEl, statusEl, mode }) {
       pumpQueue();
     });
 
-    // Start stream (low quality = faster). Provide avatarId.
     const stream = await avatar.createStartAvatar({
       quality: AvatarQuality.Low,
       avatarId,
@@ -147,15 +181,14 @@ async function initAvatar({ videoEl, statusEl, mode }) {
   } catch (e) {
     textOnly = true;
     avatarReady = false;
-    setStatus(statusEl, `Text-only fallback (avatar init error)`);
-    // caller logs details
-    throw e;
+    setStatus(statusEl, "Text-only fallback (avatar init error)");
+    appendLog(logEl, `\n[Avatar init error] ${String(e)}\n`);
   }
 }
 
 /**
- * Send a message to backend and speak chunks (non-streaming but low perceived latency).
- * Uses POST /api/heygen/chat which should return:
+ * Chat endpoint (works even in text-only mode).
+ * Uses POST /api/heygen/chat which returns:
  * { response, chunks: [..], safety, meta }
  */
 async function sendMessage({ message, mode, logEl, statusEl }) {
@@ -183,10 +216,8 @@ async function sendMessage({ message, mode, logEl, statusEl }) {
     const full = (data?.response || "").trim();
     const chunks = Array.isArray(data?.chunks) ? data.chunks : [];
 
-    // Update transcript immediately
     appendLog(logEl, full ? `${full}\n` : `[No response]\n`);
 
-    // Speak in chunks (if avatar is available)
     if (!textOnly && avatarReady && chunks.length) {
       chunks.forEach((c) => enqueueSpeak(c));
       setStatus(statusEl, "Speaking…");
@@ -209,9 +240,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   const inputEl = byId("msg");
   const sendBtn = byId("send");
 
-  // Optional start button + mode selector if you have them in HTML
   const startBtn = byId("startAvatar"); // optional
-  const modeSelect = byId("mode"); // optional <select id="mode"><option value="clinic">...</option>...</select>
+  const modeSelect = byId("mode"); // optional
 
   if (!statusEl || !logEl || !inputEl || !sendBtn) {
     throw new Error(
@@ -221,7 +251,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   let mode = modeSelect?.value || MODE_DEFAULT;
 
-  // If you have a mode select, update mode
   if (modeSelect) {
     modeSelect.addEventListener("change", () => {
       mode = modeSelect.value;
@@ -229,27 +258,18 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // If you want to auto-init avatar on load (reduces first-message WebRTC delay)
-  // But if avatar IDs aren't configured, it will fall back to text-only.
-  try {
-    await initAvatar({ videoEl, statusEl, mode });
-  } catch (e) {
-    appendLog(logEl, `\n[Avatar init error] ${String(e)}\n`);
-  }
+  // Auto-init on load (optional) – if it fails, it will fall back to text-only
+  await initAvatar({ videoEl, statusEl, logEl, mode });
 
-  // Optional "Start Avatar" button behavior (if present in HTML)
   if (startBtn) {
     startBtn.onclick = async () => {
-      try {
-        textOnly = false;
-        await initAvatar({ videoEl, statusEl, mode });
-      } catch (e) {
-        appendLog(logEl, `\n[Avatar init error] ${String(e)}\n`);
-      }
+      // reset state and try again
+      textOnly = false;
+      avatarReady = false;
+      await initAvatar({ videoEl, statusEl, logEl, mode });
     };
   }
 
-  // Send message click
   sendBtn.onclick = () => {
     const msg = inputEl.value.trim();
     if (!msg) return;
@@ -257,7 +277,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     sendMessage({ message: msg, mode, logEl, statusEl });
   };
 
-  // Enter-to-send
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
