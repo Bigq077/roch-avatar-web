@@ -1,16 +1,12 @@
-import StreamingAvatar, { AvatarQuality, StreamingEvents } from "@heygen/streaming-avatar";
-
-/**
- * UPDATED FIXES:
- * - Uses your REAL backend endpoints:
- *   ✅ POST /api/heygen/session/start  (requires { avatar_id, mode })
- *   ✅ POST /api/heygen/chat
- * - Supports token returned either as:
- *   { token: "..." }  OR  { data: { token: "..." } }  OR  { data: { token: { token: "..." } } }
- * - If backend does NOT return a token, it falls back to text-only and logs the payload,
- *   so you can see exactly what your backend returned.
- * - Waits for DOMContentLoaded before wiring UI.
- */
+// ✅ Works across different @heygen/streaming-avatar export shapes.
+// Some versions: default export is the class
+// Some versions: named export { StreamingAvatar }
+// Some bundlers: class ends up at default.default
+import StreamingAvatarDefault, {
+  StreamingAvatar as StreamingAvatarNamed,
+  AvatarQuality,
+  StreamingEvents,
+} from "@heygen/streaming-avatar";
 
 const API_BASE =
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL) ||
@@ -25,6 +21,12 @@ const AVATAR_ID_CLINIC =
 
 const AVATAR_ID_REHAB =
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_HEYGEN_AVATAR_ID_REHAB) || "";
+
+// Resolve constructor safely
+const StreamingAvatarCtor =
+  StreamingAvatarNamed ||
+  StreamingAvatarDefault?.default ||
+  StreamingAvatarDefault;
 
 let avatar = null;
 let sessionData = null;
@@ -52,26 +54,14 @@ function getAvatarIdForMode(mode) {
   return mode === "rehab" ? AVATAR_ID_REHAB : AVATAR_ID_CLINIC;
 }
 
-/**
- * Try to extract a HeyGen token from various possible payload shapes.
- * You can extend this if your backend returns a different structure.
- */
 function extractToken(payload) {
-  // most common shapes
   if (payload?.token && typeof payload.token === "string") return payload.token;
   if (payload?.data?.token && typeof payload.data.token === "string") return payload.data.token;
-
-  // sometimes nested token objects
   if (payload?.data?.token?.token && typeof payload.data.token.token === "string") return payload.data.token.token;
   if (payload?.data?.data?.token && typeof payload.data.data.token === "string") return payload.data.data.token;
-
-  // fallback: nothing found
   return null;
 }
 
-/**
- * Speak queue utilities
- */
 function enqueueSpeak(text) {
   const cleaned = (text || "").trim();
   if (!cleaned) return;
@@ -83,26 +73,17 @@ async function pumpQueue() {
   if (textOnly) return;
   if (!avatar) return;
   if (isSpeaking) return;
+
   const next = speakQueue.shift();
   if (!next) return;
 
   try {
     await avatar.speak({ text: next });
-  } catch (e) {
+  } catch {
     textOnly = true;
   }
 }
 
-/**
- * Create HeyGen session + start WebRTC stream.
- * Uses your backend:
- *   POST /api/heygen/session/start  { avatar_id, mode }
- *
- * IMPORTANT:
- * The @heygen/streaming-avatar SDK expects a TOKEN.
- * Your backend MUST return a token somewhere in the JSON.
- * If it doesn't, we log the payload and fall back to text-only.
- */
 async function initAvatar({ videoEl, statusEl, logEl, mode }) {
   const avatarId = getAvatarIdForMode(mode);
 
@@ -112,16 +93,24 @@ async function initAvatar({ videoEl, statusEl, logEl, mode }) {
     return;
   }
 
+  // Safety: if constructor resolution failed
+  if (typeof StreamingAvatarCtor !== "function") {
+    textOnly = true;
+    setStatus(statusEl, "Text-only fallback (HeyGen SDK import mismatch)");
+    appendLog(
+      logEl,
+      `\n[Avatar init error] StreamingAvatarCtor is not a function. Got: ${typeof StreamingAvatarCtor}\n`
+    );
+    return;
+  }
+
   try {
     setStatus(statusEl, "Connecting avatar…");
 
     const res = await fetch(`${API_BASE}/api/heygen/session/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        avatar_id: avatarId,
-        mode, // "clinic" or "rehab"
-      }),
+      body: JSON.stringify({ avatar_id: avatarId, mode }),
     });
 
     if (!res.ok) {
@@ -130,27 +119,17 @@ async function initAvatar({ videoEl, statusEl, logEl, mode }) {
     }
 
     sessionData = await res.json();
-
     const token = extractToken(sessionData);
 
     if (!token) {
-      // This means your backend is not returning a token the JS SDK can use.
-      // We'll fall back to text-only and print the payload for debugging.
       textOnly = true;
       avatarReady = false;
       setStatus(statusEl, "Text-only fallback (no HeyGen token returned)");
-      appendLog(
-        logEl,
-        `\n[Avatar init error] No token returned from /api/heygen/session/start.\nPayload:\n${JSON.stringify(
-          sessionData,
-          null,
-          2
-        )}\n`
-      );
+      appendLog(logEl, `\n[Avatar init error] No token returned.\n${JSON.stringify(sessionData, null, 2)}\n`);
       return;
     }
 
-    avatar = new StreamingAvatar({ token });
+    avatar = new StreamingAvatarCtor({ token });
 
     avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
       isSpeaking = true;
@@ -165,7 +144,10 @@ async function initAvatar({ videoEl, statusEl, logEl, mode }) {
 
     const stream = await avatar.createStartAvatar({
       quality: AvatarQuality.Low,
+      // Docs call this avatarName in some versions; avatarId in others.
+      // We'll pass both to be safe.
       avatarId,
+      avatarName: avatarId,
     });
 
     if (videoEl) {
@@ -186,11 +168,6 @@ async function initAvatar({ videoEl, statusEl, logEl, mode }) {
   }
 }
 
-/**
- * Chat endpoint (works even in text-only mode).
- * Uses POST /api/heygen/chat which returns:
- * { response, chunks: [..], safety, meta }
- */
 async function sendMessage({ message, mode, logEl, statusEl }) {
   appendLog(logEl, `\n\nYou: ${message}\nAvatar: `);
   setStatus(statusEl, "Thinking…");
@@ -199,11 +176,7 @@ async function sendMessage({ message, mode, logEl, statusEl }) {
     const res = await fetch(`${API_BASE}/api/heygen/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mode,
-        message,
-        history: [],
-      }),
+      body: JSON.stringify({ mode, message, history: [] }),
     });
 
     if (!res.ok) {
@@ -212,7 +185,6 @@ async function sendMessage({ message, mode, logEl, statusEl }) {
     }
 
     const data = await res.json();
-
     const full = (data?.response || "").trim();
     const chunks = Array.isArray(data?.chunks) ? data.chunks : [];
 
@@ -230,9 +202,6 @@ async function sendMessage({ message, mode, logEl, statusEl }) {
   }
 }
 
-/**
- * Bootstraps after DOM is ready so IDs exist.
- */
 window.addEventListener("DOMContentLoaded", async () => {
   const videoEl = byId("avatarVideo");
   const statusEl = byId("status");
@@ -244,9 +213,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const modeSelect = byId("mode"); // optional
 
   if (!statusEl || !logEl || !inputEl || !sendBtn) {
-    throw new Error(
-      "Missing required UI elements. Ensure index.html includes ids: status, log, msg, send (and avatarVideo optional)."
-    );
+    throw new Error("Missing required UI elements: status, log, msg, send.");
   }
 
   let mode = modeSelect?.value || MODE_DEFAULT;
@@ -258,12 +225,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Auto-init on load (optional) – if it fails, it will fall back to text-only
   await initAvatar({ videoEl, statusEl, logEl, mode });
 
   if (startBtn) {
     startBtn.onclick = async () => {
-      // reset state and try again
       textOnly = false;
       avatarReady = false;
       await initAvatar({ videoEl, statusEl, logEl, mode });
