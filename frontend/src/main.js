@@ -1,9 +1,4 @@
-import * as HeyGen from "@heygen/streaming-avatar";
-
-/**
- * Works with @heygen/streaming-avatar@1.0.16 by importing the module namespace
- * and resolving the constructor + enums from whatever keys exist.
- */
+import { StreamingAvatar, AvatarQuality, StreamingEvents } from "@heygen/streaming-avatar";
 
 const API_BASE =
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL) ||
@@ -19,23 +14,12 @@ const AVATAR_ID_CLINIC =
 const AVATAR_ID_REHAB =
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_HEYGEN_AVATAR_ID_REHAB) || "";
 
-// Resolve exports safely for v1.0.16
-const StreamingAvatarCtor =
-  HeyGen.StreamingAvatar ||
-  HeyGen.default ||
-  HeyGen.StreamingAvatarClient ||
-  HeyGen.StreamingAvatarSDK;
-
-const AvatarQuality = HeyGen.AvatarQuality || HeyGen.Quality || {};
-const StreamingEvents = HeyGen.StreamingEvents || HeyGen.Events || {};
-
 let avatar = null;
-let sessionData = null;
-
-let speakQueue = [];
 let isSpeaking = false;
 let avatarReady = false;
 let textOnly = false;
+
+let speakQueue = [];
 
 function byId(id) {
   return document.getElementById(id);
@@ -94,20 +78,10 @@ async function initAvatar({ videoEl, statusEl, logEl, mode }) {
     return;
   }
 
-  if (typeof StreamingAvatarCtor !== "function") {
-    textOnly = true;
-    setStatus(statusEl, "Text-only fallback (HeyGen SDK export mismatch)");
-    appendLog(
-      logEl,
-      `\n[Avatar init error] Could not resolve StreamingAvatar constructor.\n` +
-        `Available exports:\n${Object.keys(HeyGen).join(", ")}\n`
-    );
-    return;
-  }
-
   try {
     setStatus(statusEl, "Connecting avatar…");
 
+    // Backend returns { token: "..." }
     const res = await fetch(`${API_BASE}/api/heygen/session/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -119,7 +93,7 @@ async function initAvatar({ videoEl, statusEl, logEl, mode }) {
       throw new Error(`Session failed (${res.status}): ${errTxt}`);
     }
 
-    sessionData = await res.json();
+    const sessionData = await res.json();
     const token = extractToken(sessionData);
 
     if (!token) {
@@ -130,37 +104,22 @@ async function initAvatar({ videoEl, statusEl, logEl, mode }) {
       return;
     }
 
-    // Construct SDK client
-    avatar = new StreamingAvatarCtor({ token });
+    avatar = new StreamingAvatar({ token });
 
-    // Hook events if available
-    const startEvt =
-      StreamingEvents.AVATAR_START_TALKING || StreamingEvents.StartTalking || StreamingEvents.START_TALKING;
-    const stopEvt =
-      StreamingEvents.AVATAR_STOP_TALKING || StreamingEvents.StopTalking || StreamingEvents.STOP_TALKING;
+    avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
+      isSpeaking = true;
+      setStatus(statusEl, "Speaking…");
+    });
 
-    if (startEvt) {
-      avatar.on(startEvt, () => {
-        isSpeaking = true;
-        setStatus(statusEl, "Speaking…");
-      });
-    }
-    if (stopEvt) {
-      avatar.on(stopEvt, () => {
-        isSpeaking = false;
-        setStatus(statusEl, "Ready");
-        pumpQueue();
-      });
-    }
+    avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+      isSpeaking = false;
+      setStatus(statusEl, "Ready");
+      pumpQueue();
+    });
 
-    // Pick quality key
-    const lowQuality = AvatarQuality.Low || AvatarQuality.low || "low";
-
-    // Start avatar stream (support both param names)
     const stream = await avatar.createStartAvatar({
-      quality: lowQuality,
+      quality: AvatarQuality.Low,
       avatarId,
-      avatarName: avatarId,
     });
 
     if (videoEl) {
@@ -238,7 +197,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // auto-init
+  // Auto-init (reduces first-message WebRTC delay)
   await initAvatar({ videoEl, statusEl, logEl, mode });
 
   if (startBtn) {
