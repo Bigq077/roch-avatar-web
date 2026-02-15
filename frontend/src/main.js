@@ -1,12 +1,9 @@
-// ✅ Works across different @heygen/streaming-avatar export shapes.
-// Some versions: default export is the class
-// Some versions: named export { StreamingAvatar }
-// Some bundlers: class ends up at default.default
-import StreamingAvatarDefault, {
-  StreamingAvatar as StreamingAvatarNamed,
-  AvatarQuality,
-  StreamingEvents,
-} from "@heygen/streaming-avatar";
+import * as HeyGen from "@heygen/streaming-avatar";
+
+/**
+ * Works with @heygen/streaming-avatar@1.0.16 by importing the module namespace
+ * and resolving the constructor + enums from whatever keys exist.
+ */
 
 const API_BASE =
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL) ||
@@ -22,11 +19,15 @@ const AVATAR_ID_CLINIC =
 const AVATAR_ID_REHAB =
   (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_HEYGEN_AVATAR_ID_REHAB) || "";
 
-// Resolve constructor safely
+// Resolve exports safely for v1.0.16
 const StreamingAvatarCtor =
-  StreamingAvatarNamed ||
-  StreamingAvatarDefault?.default ||
-  StreamingAvatarDefault;
+  HeyGen.StreamingAvatar ||
+  HeyGen.default ||
+  HeyGen.StreamingAvatarClient ||
+  HeyGen.StreamingAvatarSDK;
+
+const AvatarQuality = HeyGen.AvatarQuality || HeyGen.Quality || {};
+const StreamingEvents = HeyGen.StreamingEvents || HeyGen.Events || {};
 
 let avatar = null;
 let sessionData = null;
@@ -93,13 +94,13 @@ async function initAvatar({ videoEl, statusEl, logEl, mode }) {
     return;
   }
 
-  // Safety: if constructor resolution failed
   if (typeof StreamingAvatarCtor !== "function") {
     textOnly = true;
-    setStatus(statusEl, "Text-only fallback (HeyGen SDK import mismatch)");
+    setStatus(statusEl, "Text-only fallback (HeyGen SDK export mismatch)");
     appendLog(
       logEl,
-      `\n[Avatar init error] StreamingAvatarCtor is not a function. Got: ${typeof StreamingAvatarCtor}\n`
+      `\n[Avatar init error] Could not resolve StreamingAvatar constructor.\n` +
+        `Available exports:\n${Object.keys(HeyGen).join(", ")}\n`
     );
     return;
   }
@@ -129,23 +130,35 @@ async function initAvatar({ videoEl, statusEl, logEl, mode }) {
       return;
     }
 
+    // Construct SDK client
     avatar = new StreamingAvatarCtor({ token });
 
-    avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
-      isSpeaking = true;
-      setStatus(statusEl, "Speaking…");
-    });
+    // Hook events if available
+    const startEvt =
+      StreamingEvents.AVATAR_START_TALKING || StreamingEvents.StartTalking || StreamingEvents.START_TALKING;
+    const stopEvt =
+      StreamingEvents.AVATAR_STOP_TALKING || StreamingEvents.StopTalking || StreamingEvents.STOP_TALKING;
 
-    avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-      isSpeaking = false;
-      setStatus(statusEl, "Ready");
-      pumpQueue();
-    });
+    if (startEvt) {
+      avatar.on(startEvt, () => {
+        isSpeaking = true;
+        setStatus(statusEl, "Speaking…");
+      });
+    }
+    if (stopEvt) {
+      avatar.on(stopEvt, () => {
+        isSpeaking = false;
+        setStatus(statusEl, "Ready");
+        pumpQueue();
+      });
+    }
 
+    // Pick quality key
+    const lowQuality = AvatarQuality.Low || AvatarQuality.low || "low";
+
+    // Start avatar stream (support both param names)
     const stream = await avatar.createStartAvatar({
-      quality: AvatarQuality.Low,
-      // Docs call this avatarName in some versions; avatarId in others.
-      // We'll pass both to be safe.
+      quality: lowQuality,
       avatarId,
       avatarName: avatarId,
     });
@@ -225,6 +238,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  // auto-init
   await initAvatar({ videoEl, statusEl, logEl, mode });
 
   if (startBtn) {
