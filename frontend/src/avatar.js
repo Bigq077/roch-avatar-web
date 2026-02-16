@@ -1,33 +1,34 @@
-// frontend/src/avatar.js
-// HeyGen Interactive Avatar Integration
+// avatar/frontend/src/avatar.js
+// LiveAvatar CUSTOM Mode Integration
+
+import { Room, RoomEvent } from 'livekit-client';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /**
- * Avatar Manager Class
- * Handles HeyGen Interactive Avatar initialization, conversation, and lifecycle
+ * LiveAvatar Manager for CUSTOM Mode
+ * Manages LiveKit room connection and avatar interactions
  */
 export class AvatarManager {
   constructor(mode = 'clinic') {
-    this.mode = mode; // 'clinic' or 'rehab'
+    this.mode = mode;
     this.sessionId = null;
-    this.heygenSession = null;
+    this.sessionToken = null;
+    this.room = null;
     this.conversationHistory = [];
-    this.isListening = false;
+    this.isConnected = false;
     this.isSpeaking = false;
-    
-    // HeyGen SDK reference (loaded from CDN in HTML)
-    this.StreamingAvatar = window.StreamingAvatar;
+    this.avatarTrack = null;
   }
 
   /**
-   * Initialize HeyGen avatar session
+   * Initialize LiveAvatar session
    */
-  async initialize(avatarId, containerElement) {
+  async initialize(avatarId, videoElement) {
     try {
-      console.log('🎬 Initializing avatar session...');
+      console.log('🎬 Initializing LiveAvatar session...');
       
-      // Start HeyGen session via backend
+      // Get session from backend
       const response = await fetch(`${API_BASE_URL}/api/heygen/session/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -43,65 +44,70 @@ export class AvatarManager {
 
       const sessionData = await response.json();
       this.sessionId = sessionData.session_id;
+      this.sessionToken = sessionData.session_token;
 
       console.log('✅ Session created:', this.sessionId);
 
-      // Initialize HeyGen SDK
-      this.heygenSession = new this.StreamingAvatar({
-        token: sessionData.session_id,
-        iceServers: sessionData.ice_servers
-      });
-
-      // Attach to container
-      await this.heygenSession.createPeerConnection(
-        sessionData.sdp,
-        containerElement
-      );
-
-      console.log('✅ Avatar connected');
-
-      // Set up event listeners
-      this.setupEventListeners();
+      // Connect to LiveKit room
+      await this.connectToRoom(sessionData.room_url, sessionData.room_token, videoElement);
 
       return true;
 
     } catch (error) {
-      console.error('❌ Avatar initialization failed:', error);
+      console.error('❌ Initialization failed:', error);
       throw error;
     }
   }
 
   /**
-   * Set up HeyGen event listeners
+   * Connect to LiveKit room and attach avatar video
    */
-  setupEventListeners() {
-    if (!this.heygenSession) return;
+  async connectToRoom(roomUrl, roomToken, videoElement) {
+    try {
+      console.log('📡 Connecting to LiveKit room...');
 
-    // Avatar started speaking
-    this.heygenSession.on('avatar_start_talking', () => {
-      console.log('🗣️ Avatar started speaking');
-      this.isSpeaking = true;
-      this.onSpeakingStart?.();
-    });
+      // Create LiveKit room
+      this.room = new Room();
 
-    // Avatar stopped speaking
-    this.heygenSession.on('avatar_stop_talking', () => {
-      console.log('🤐 Avatar stopped speaking');
-      this.isSpeaking = false;
-      this.onSpeakingEnd?.();
-    });
+      // Set up event listeners
+      this.room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        console.log('🎥 Track subscribed:', track.kind);
+        
+        if (track.kind === 'video') {
+          this.avatarTrack = track;
+          track.attach(videoElement);
+          console.log('✅ Avatar video attached');
+          this.onStreamReady?.();
+        }
+      });
 
-    // Stream ready
-    this.heygenSession.on('stream_ready', () => {
-      console.log('📹 Stream ready');
-      this.onStreamReady?.();
-    });
+      this.room.on(RoomEvent.TrackUnsubscribed, (track) => {
+        console.log('🎥 Track unsubscribed');
+        if (track.kind === 'video') {
+          track.detach();
+        }
+      });
 
-    // Connection closed
-    this.heygenSession.on('stream_disconnected', () => {
-      console.log('📴 Stream disconnected');
-      this.onDisconnect?.();
-    });
+      this.room.on(RoomEvent.Disconnected, () => {
+        console.log('📴 Disconnected from room');
+        this.isConnected = false;
+        this.onDisconnect?.();
+      });
+
+      this.room.on(RoomEvent.Connected, () => {
+        console.log('✅ Connected to room');
+        this.isConnected = true;
+      });
+
+      // Connect to room
+      await this.room.connect(roomUrl, roomToken);
+
+      console.log('✅ LiveKit room connected');
+
+    } catch (error) {
+      console.error('❌ Room connection failed:', error);
+      throw error;
+    }
   }
 
   /**
@@ -111,13 +117,13 @@ export class AvatarManager {
     try {
       console.log('💬 User:', userMessage);
 
-      // Add to conversation history
+      // Add to history
       this.conversationHistory.push({
         role: 'user',
         content: userMessage
       });
 
-      // Call backend to get response from brain
+      // Get response from brain via backend
       const response = await fetch(`${API_BASE_URL}/api/heygen/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,9 +142,8 @@ export class AvatarManager {
       const data = await response.json();
 
       console.log('🤖 Assistant:', data.response);
-      console.log('📦 Chunks:', data.chunks.length);
 
-      // Add to conversation history
+      // Add to history
       this.conversationHistory.push({
         role: 'assistant',
         content: data.response
@@ -150,103 +155,73 @@ export class AvatarManager {
         this.onEmergency?.(data.response);
       }
 
-      // Send response to avatar in chunks for smooth delivery
-      await this.speakChunks(data.chunks);
+      // Send to LiveAvatar to speak
+      await this.speak(data.response);
 
       return data;
 
     } catch (error) {
-      console.error('❌ Message send failed:', error);
+      console.error('❌ Send message failed:', error);
       this.onError?.(error);
       throw error;
     }
   }
 
   /**
-   * Make avatar speak text in chunks (for smooth delivery)
+   * Make avatar speak text
+   * In CUSTOM mode, we send text via LiveKit data channel
    */
-  async speakChunks(chunks) {
-    if (!this.heygenSession || !chunks || chunks.length === 0) return;
-
-    console.log(`🎙️ Speaking ${chunks.length} chunks...`);
-
-    for (const chunk of chunks) {
-      try {
-        // Send chunk to HeyGen
-        await this.heygenSession.speak({
-          text: chunk,
-          task_type: 'repeat' // or 'talk' depending on HeyGen API version
-        });
-
-        // Small delay between chunks for natural pacing
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-      } catch (error) {
-        console.error('❌ Chunk speak failed:', error);
-        // Continue with next chunk even if one fails
-      }
+  async speak(text) {
+    if (!this.room || !this.isConnected) {
+      console.error('❌ Room not connected');
+      return;
     }
-
-    console.log('✅ Finished speaking');
-  }
-
-  /**
-   * Interrupt avatar (stop speaking)
-   */
-  async interrupt() {
-    if (!this.heygenSession) return;
 
     try {
-      await this.heygenSession.interrupt();
-      console.log('✋ Avatar interrupted');
+      console.log('🎙️ Sending text to avatar:', text);
+
+      this.isSpeaking = true;
+      this.onSpeakingStart?.();
+
+      // Send text to avatar via LiveKit data channel
+      // LiveAvatar will handle TTS and lip sync
+      const encoder = new TextEncoder();
+      const data = encoder.encode(JSON.stringify({
+        type: 'speak',
+        text: text
+      }));
+
+      await this.room.localParticipant.publishData(data, 'reliable');
+
+      console.log('✅ Text sent to avatar');
+
+      // Simulate speaking end (in reality, listen to avatar events)
+      // For now, estimate based on text length (150 words per minute)
+      const words = text.split(' ').length;
+      const speakingTimeMs = (words / 150) * 60 * 1000;
+
+      setTimeout(() => {
+        this.isSpeaking = false;
+        this.onSpeakingEnd?.();
+      }, speakingTimeMs);
+
     } catch (error) {
-      console.error('❌ Interrupt failed:', error);
+      console.error('❌ Speak failed:', error);
+      this.isSpeaking = false;
     }
   }
 
   /**
-   * Start listening for user input (microphone)
-   */
-  async startListening() {
-    if (!this.heygenSession) return;
-
-    try {
-      await this.heygenSession.startListening();
-      this.isListening = true;
-      console.log('🎤 Started listening');
-      this.onListeningStart?.();
-    } catch (error) {
-      console.error('❌ Start listening failed:', error);
-    }
-  }
-
-  /**
-   * Stop listening
-   */
-  async stopListening() {
-    if (!this.heygenSession) return;
-
-    try {
-      await this.heygenSession.stopListening();
-      this.isListening = false;
-      console.log('🔇 Stopped listening');
-      this.onListeningEnd?.();
-    } catch (error) {
-      console.error('❌ Stop listening failed:', error);
-    }
-  }
-
-  /**
-   * Close avatar session
+   * Close session
    */
   async close() {
     try {
-      console.log('👋 Closing avatar session...');
+      console.log('👋 Closing session...');
 
-      // Stop HeyGen session
-      if (this.heygenSession) {
-        await this.heygenSession.close();
-        this.heygenSession = null;
+      // Disconnect from room
+      if (this.room) {
+        await this.room.disconnect();
+        this.room = null;
       }
 
       // Notify backend to clean up
@@ -259,7 +234,9 @@ export class AvatarManager {
       }
 
       this.sessionId = null;
+      this.sessionToken = null;
       this.conversationHistory = [];
+      this.isConnected = false;
 
       console.log('✅ Session closed');
 
@@ -269,7 +246,7 @@ export class AvatarManager {
   }
 
   /**
-   * Reset conversation (keep session alive)
+   * Reset conversation
    */
   resetConversation() {
     this.conversationHistory = [];
@@ -284,13 +261,11 @@ export class AvatarManager {
   }
 
   // ========================================================================
-  // EVENT HANDLERS (set these from outside)
+  // EVENT HANDLERS
   // ========================================================================
 
   onSpeakingStart = null;
   onSpeakingEnd = null;
-  onListeningStart = null;
-  onListeningEnd = null;
   onStreamReady = null;
   onDisconnect = null;
   onEmergency = null;
@@ -300,15 +275,16 @@ export class AvatarManager {
 /**
  * Helper: Create and initialize avatar
  */
-export async function createAvatar(mode, avatarId, containerElement) {
+export async function createAvatar(mode, avatarId, videoElement) {
   const avatar = new AvatarManager(mode);
-  await avatar.initialize(avatarId, containerElement);
+  await avatar.initialize(avatarId, videoElement);
   return avatar;
 }
 
 /**
- * Helper: Check if avatar features are available
+ * Helper: Check if LiveAvatar is supported
  */
 export function isAvatarSupported() {
-  return typeof window.StreamingAvatar !== 'undefined';
+  // Check if LiveKit is loaded
+  return typeof Room !== 'undefined';
 }
