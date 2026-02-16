@@ -1,5 +1,5 @@
 # avatar/backend/app/routes/heygen.py
-# HeyGen Interactive Avatar Routes
+# LiveAvatar CUSTOM Mode Integration
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -7,9 +7,11 @@ from typing import List, Optional, Dict, Any
 import httpx
 import os
 import re
-import json
 
 router = APIRouter()
+
+# LiveAvatar API base
+LIVEAVATAR_API_URL = "https://api.liveavatar.com/v1"
 
 # ============================================================================
 # MODELS
@@ -31,54 +33,47 @@ class ChatResponse(BaseModel):
     safety: Dict[str, bool]
     meta: Dict[str, Any]
 
-class HeyGenSessionRequest(BaseModel):
+class SessionStartRequest(BaseModel):
+    mode: str  # "clinic" or "rehab"
     avatar_id: str
-    mode: str
 
-class HeyGenSessionResponse(BaseModel):
+class SessionStartResponse(BaseModel):
     session_id: str
-    ice_servers: Optional[List[Dict[str, Any]]] = []
-    sdp: Optional[str] = ""
+    session_token: str
+    room_url: str
+    room_token: str
 
 # ============================================================================
-# RESPONSE CACHING (for instant common answers)
+# CACHED RESPONSES (instant 0ms latency)
 # ============================================================================
 
 CACHED_RESPONSES = {
-    "pricing_physio": "Our physiotherapy sessions are £75 for both assessments and follow-ups. Each session is 50 minutes long. If we use specialist equipment like shockwave therapy or Class IV laser, there's an additional £45 surcharge. Remedial rehabilitation sessions are £65, and prescribing is £12.50.",
-    
+    "pricing": "Our physiotherapy sessions are £75 for both assessments and follow-ups. Each session is 50 minutes. If we use specialist equipment like shockwave therapy or Class IV laser, there's an additional £45 surcharge. Remedial rehabilitation sessions are £65, and prescribing is £12.50.",
     "hours": "We're open Monday to Friday, 8:30am to 9:00pm. We're closed on weekends and all UK bank holidays.",
-    
     "locations": "We have two locations. Our Alcester clinic is at Kinwarton Road, Alcester, B49 6AD. Our Redditch clinic is at 51 Bromsgrove Road, Redditch, B97 4RH.",
-    
     "cancellation": "We have a 24-hour cancellation policy. If you cancel with less than 24 hours notice, the full fee will be charged.",
-    
-    "insurance": "We operate on a self-pay model. You pay for your session upfront, and you're welcome to claim it back through your insurance provider yourself. We don't work directly with Bupa, but many of our patients successfully claim back from other insurers."
+    "insurance": "We operate on a self-pay model. You pay upfront and you're welcome to claim back from your insurance. We don't work directly with Bupa, but many patients successfully claim from other insurers."
 }
 
-def check_for_cached_response(message: str) -> Optional[str]:
-    """Check if this is a common question with cached answer"""
+def check_cached_response(message: str) -> Optional[str]:
+    """Check for instant cached answers"""
     msg_lower = message.lower()
     
     if any(word in msg_lower for word in ["price", "cost", "how much", "fee"]):
-        return CACHED_RESPONSES["pricing_physio"]
-    
-    if any(word in msg_lower for word in ["hours", "open", "when are you", "opening times"]):
+        return CACHED_RESPONSES["pricing"]
+    if any(word in msg_lower for word in ["hours", "open", "when are you", "opening"]):
         return CACHED_RESPONSES["hours"]
-    
-    if any(word in msg_lower for word in ["location", "address", "where are you", "where is"]):
+    if any(word in msg_lower for word in ["location", "address", "where"]):
         return CACHED_RESPONSES["locations"]
-    
-    if any(word in msg_lower for word in ["cancel", "cancellation", "reschedule"]):
+    if any(word in msg_lower for word in ["cancel", "reschedule"]):
         return CACHED_RESPONSES["cancellation"]
-    
-    if any(word in msg_lower for word in ["insurance", "bupa", "claim back"]):
+    if any(word in msg_lower for word in ["insurance", "bupa", "claim"]):
         return CACHED_RESPONSES["insurance"]
     
     return None
 
 # ============================================================================
-# BRAIN API CLIENT (NON-STREAMING)
+# BRAIN API CLIENT
 # ============================================================================
 
 async def call_brain_api(
@@ -87,10 +82,9 @@ async def call_brain_api(
     history: List[Message] = [],
     session_id: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Call brain API - non-streaming version"""
+    """Call your brain API on Render"""
     
     brain_url = os.getenv("BRAIN_API_URL")
-    
     if not brain_url:
         raise HTTPException(status_code=500, detail="BRAIN_API_URL not set")
     
@@ -113,45 +107,6 @@ async def call_brain_api(
         raise HTTPException(status_code=502, detail=f"Brain API error: {str(e)}")
 
 # ============================================================================
-# BRAIN API CLIENT (STREAMING)
-# ============================================================================
-
-async def call_brain_api_stream(
-    mode: str,
-    message: str,
-    history: List[Message] = []
-):
-    """Call brain API - streaming version (yields sentences as they arrive)"""
-    
-    brain_url = os.getenv("BRAIN_API_URL")
-    
-    if not brain_url:
-        raise HTTPException(status_code=500, detail="BRAIN_API_URL not set")
-    
-    payload = {
-        "mode": mode,
-        "message": message,
-        "history": [{"role": m.role, "content": m.content} for m in history]
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream(
-                "POST",
-                f"{brain_url}/api/brain/stream",
-                json=payload
-            ) as response:
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        data = json.loads(line[6:])
-                        if "text" in data:
-                            yield data["text"]
-                        elif data.get("done"):
-                            break
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Brain stream error: {str(e)}")
-
-# ============================================================================
 # OPENAI FALLBACK
 # ============================================================================
 
@@ -163,7 +118,7 @@ async def fallback_openai(mode: str, message: str, history: List[Message] = []) 
         with open(f"app/prompts/{mode}_avatar.txt", 'r') as f:
             system_prompt = f.read()
     except FileNotFoundError:
-        raise HTTPException(status_code=500, detail=f"Prompt file not found: {mode}_avatar.txt")
+        raise HTTPException(status_code=500, detail=f"Prompt not found: {mode}_avatar.txt")
     
     messages = [{"role": "system", "content": system_prompt}]
     for msg in history:
@@ -173,10 +128,10 @@ async def fallback_openai(mode: str, message: str, history: List[Message] = []) 
     try:
         client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),  # Fast model
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             messages=messages,
             temperature=0.7,
-            max_tokens=300  # Shorter = faster
+            max_tokens=300
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -187,14 +142,14 @@ async def fallback_openai(mode: str, message: str, history: List[Message] = []) 
 # ============================================================================
 
 def chunk_into_sentences(text: str) -> List[str]:
-    """Split text into sentence chunks for smooth delivery"""
+    """Split text into sentence chunks"""
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     
     chunks = []
     current_chunk = ""
     
     for sentence in sentences:
-        if len(current_chunk) + len(sentence) < 120:  # Reduced for faster delivery
+        if len(current_chunk) + len(sentence) < 120:
             current_chunk += sentence + " "
         else:
             if current_chunk:
@@ -207,16 +162,19 @@ def chunk_into_sentences(text: str) -> List[str]:
     return chunks
 
 # ============================================================================
-# MAIN CHAT ENDPOINT
+# CHAT ENDPOINT (for brain responses)
 # ============================================================================
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """Main chat endpoint - handles both cached and dynamic responses"""
+    """
+    Get response from brain for user message.
+    Frontend will send this text to LiveAvatar to speak.
+    """
     
     try:
-        # Check cache first (instant response)
-        cached = check_for_cached_response(request.message)
+        # Check cache first
+        cached = check_cached_response(request.message)
         if cached:
             return ChatResponse(
                 response=cached,
@@ -225,19 +183,17 @@ async def chat(request: ChatRequest):
                 meta={"source": "cache", "latency_ms": 0}
             )
         
-        # Determine if we use brain or fallback
+        # Call brain or fallback
         brain_url = os.getenv("BRAIN_API_URL")
         use_fallback = os.getenv("USE_OPENAI_FALLBACK", "false").lower() == "true"
         
         if brain_url and not use_fallback:
-            # Call brain API
             brain_response = await call_brain_api(
                 mode=request.mode,
                 message=request.message,
                 history=request.history,
                 session_id=request.session_id
             )
-            
             response_text = brain_response["response"]
             safety = brain_response.get("safety", {
                 "is_emergency": False,
@@ -245,7 +201,6 @@ async def chat(request: ChatRequest):
             })
             meta = brain_response.get("meta", {})
         else:
-            # OpenAI fallback
             response_text = await fallback_openai(
                 mode=request.mode,
                 message=request.message,
@@ -254,7 +209,6 @@ async def chat(request: ChatRequest):
             safety = {"is_emergency": False, "refuse_diagnosis": False}
             meta = {"source": "openai_fallback"}
         
-        # Chunk for smooth delivery
         chunks = chunk_into_sentences(response_text)
         
         return ChatResponse(
@@ -268,42 +222,102 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
 
 # ============================================================================
-# HEYGEN SESSION MANAGEMENT
+# LIVEAVATAR SESSION MANAGEMENT
 # ============================================================================
 
-@router.post("/session/start")
-async def start_session(request: HeyGenSessionRequest):
-    """Return a HeyGen session token for the browser SDK."""
-
-    api_key = os.getenv("HEYGEN_API_KEY")
+@router.post("/session/start", response_model=SessionStartResponse)
+async def start_liveavatar_session(request: SessionStartRequest):
+    """
+    Start LiveAvatar CUSTOM mode session.
+    Returns session token and LiveKit room details.
+    """
+    
+    api_key = os.getenv("LIVEAVATAR_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=500, detail="HEYGEN_API_KEY not set")
-
+        raise HTTPException(status_code=500, detail="LIVEAVATAR_API_KEY not set")
+    
+    # Step 1: Create session token
     headers = {
-        "x-api-key": api_key,
+        "X-API-KEY": api_key,
         "Content-Type": "application/json",
+        "Accept": "application/json"
     }
+    
+    # Get voice ID based on mode
+    voice_id = os.getenv(
+        "ELEVENLABS_VOICE_ID_CLINIC" if request.mode == "clinic" 
+        else "ELEVENLABS_VOICE_ID_REHAB"
+    )
+    
+    token_payload = {
+        "mode": "CUSTOM",  # Important!
+        "avatar_id": request.avatar_id,
+        "avatar_persona": {
+            "voice_id": voice_id,
+            "language": "en"
+        }
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Create token
+            token_response = await client.post(
+                f"{LIVEAVATAR_API_URL}/sessions/token",
+                headers=headers,
+                json=token_payload
+            )
+            token_response.raise_for_status()
+            token_data = token_response.json()
+            
+            session_id = token_data["session_id"]
+            session_token = token_data["session_token"]
+            
+            # Step 2: Start session
+            start_headers = {
+                "Authorization": f"Bearer {session_token}",
+                "Accept": "application/json"
+            }
+            
+            start_response = await client.post(
+                f"{LIVEAVATAR_API_URL}/sessions/start",
+                headers=start_headers
+            )
+            start_response.raise_for_status()
+            start_data = start_response.json()
+            
+            return SessionStartResponse(
+                session_id=session_id,
+                session_token=session_token,
+                room_url=start_data.get("url", ""),
+                room_token=start_data.get("token", "")
+            )
+            
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"LiveAvatar error: {str(e)}")
 
+@router.post("/session/stop")
+async def stop_liveavatar_session(session_id: str):
+    """Stop LiveAvatar session"""
+    
+    api_key = os.getenv("LIVEAVATAR_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="LIVEAVATAR_API_KEY not set")
+    
+    headers = {
+        "X-API-KEY": api_key,
+        "Accept": "application/json"
+    }
+    
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                "https://api.heygen.com/v1/streaming.create_token",
-                headers=headers,
-                json={},
+                f"{LIVEAVATAR_API_URL}/sessions/{session_id}/stop",
+                headers=headers
             )
             response.raise_for_status()
-            data = response.json()
-
-        token = (data.get("data") or {}).get("token")
-        if not token:
-            raise HTTPException(status_code=502, detail=f"HeyGen token missing: {data}")
-
-        return {"token": token}
-
+            return {"status": "stopped", "session_id": session_id}
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"HeyGen error: {str(e)}")
-
-    
+        raise HTTPException(status_code=502, detail=f"LiveAvatar error: {str(e)}")
 
 # ============================================================================
 # HEALTH CHECK
@@ -313,8 +327,8 @@ async def start_session(request: HeyGenSessionRequest):
 async def health():
     return {
         "status": "healthy",
-        "heygen_configured": bool(os.getenv("HEYGEN_API_KEY")),
+        "liveavatar_configured": bool(os.getenv("LIVEAVATAR_API_KEY")),
         "brain_configured": bool(os.getenv("BRAIN_API_URL")),
         "cache_enabled": True,
-        "streaming_available": os.getenv("ENABLE_STREAMING", "false") == "true"
+        "mode": "CUSTOM"
     }
