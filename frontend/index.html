@@ -1,274 +1,255 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Theorem Health - Virtual Assistant</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Theorem Health - Virtual Assistant</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f5f5f5;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      padding: 20px;
-    }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
 
-    .container {
-      max-width: 800px;
-      width: 100%;
-      background: white;
-      border-radius: 16px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-      overflow: hidden;
-    }
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
 
-    .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 24px;
-      text-align: center;
-    }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+            text-align: center;
+        }
 
-    .header h1 { font-size: 24px; margin-bottom: 8px; }
-    .header p { opacity: 0.9; font-size: 14px; }
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
 
-    .avatar-container {
-      position: relative;
-      width: 100%;
-      height: 400px;
-      background: #000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
 
-    .avatar-container video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      background: #000;
-    }
+        .avatar-container {
+            position: relative;
+            width: 100%;
+            height: 400px;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
 
-    .loading {
-      position: absolute;
-      color: white;
-      font-size: 18px;
-      padding: 12px 16px;
-      background: rgba(0,0,0,0.35);
-      border-radius: 10px;
-    }
+        .avatar-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
 
-    .controls {
-      padding: 24px;
-      background: #fafafa;
-    }
+        .loading {
+            position: absolute;
+            color: white;
+            font-size: 18px;
+        }
 
-    .mode-selector {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
+        .controls {
+            padding: 24px;
+            background: #fafafa;
+        }
 
-    .mode-btn {
-      flex: 1;
-      padding: 12px;
-      border: 2px solid #e0e0e0;
-      background: white;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      transition: all 0.2s;
-    }
+        .mode-selector {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
 
-    .mode-btn.active {
-      border-color: #667eea;
-      background: #667eea;
-      color: white;
-    }
+        .mode-btn {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
 
-    .mode-btn:hover { border-color: #667eea; }
+        .mode-btn.active {
+            border-color: #667eea;
+            background: #667eea;
+            color: white;
+        }
 
-    .input-area {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 16px;
-    }
+        .mode-btn:hover {
+            border-color: #667eea;
+        }
 
-    /* JS expects id="msg" */
-    #msg {
-      flex: 1;
-      padding: 12px 16px;
-      border: 2px solid #e0e0e0;
-      border-radius: 8px;
-      font-size: 14px;
-      font-family: inherit;
-    }
+        .input-area {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
 
-    #msg:focus { outline: none; border-color: #667eea; }
+        #userInput {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+        }
 
-    .btn {
-      padding: 12px 24px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
+        #userInput:focus {
+            outline: none;
+            border-color: #667eea;
+        }
 
-    .btn-primary { background: #667eea; color: white; }
-    .btn-primary:hover { background: #5568d3; }
-    .btn-secondary { background: #e0e0e0; color: #333; }
-    .btn-secondary:hover { background: #d0d0d0; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
 
-    .status {
-      padding: 12px;
-      background: white;
-      border-radius: 8px;
-      font-size: 13px;
-      color: #666;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
 
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #10b981;
-      animation: pulse 2s infinite;
-    }
+        .btn-primary:hover {
+            background: #5568d3;
+        }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
-    }
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
 
-    .emergency-banner {
-      display: none;
-      padding: 16px;
-      background: #fee;
-      border-left: 4px solid #e00;
-      margin-bottom: 16px;
-      border-radius: 4px;
-    }
+        .btn-secondary:hover {
+            background: #d0d0d0;
+        }
 
-    .emergency-banner.show { display: block; }
-    .emergency-banner strong { color: #c00; }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
 
-    /* Transcript log (JS expects id="log") */
-    #log {
-      background: #0b0b0b;
-      color: #eaeaea;
-      border-radius: 10px;
-      padding: 12px;
-      min-height: 140px;
-      max-height: 220px;
-      overflow: auto;
-      font-size: 13px;
-      line-height: 1.35;
-      white-space: pre-wrap;
-    }
-  </style>
+        .status {
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #666;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .emergency-banner {
+            display: none;
+            padding: 16px;
+            background: #fee;
+            border-left: 4px solid #e00;
+            margin-bottom: 16px;
+            border-radius: 4px;
+        }
+
+        .emergency-banner.show {
+            display: block;
+        }
+
+        .emergency-banner strong {
+            color: #c00;
+        }
+    </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>Theorem Health & Wellness</h1>
-      <p>Virtual Assistant - Clinic & Rehab Support</p>
+    <div class="container">
+        <div class="header">
+            <h1>Theorem Health & Wellness</h1>
+            <p>Virtual Assistant - Powered by LiveAvatar</p>
+        </div>
+
+        <div class="avatar-container" id="avatarContainer">
+            <video id="avatarVideo" class="avatar-video" autoplay playsinline></video>
+            <div class="loading" id="loadingText">Click "Start Avatar" to begin</div>
+        </div>
+
+        <div class="controls">
+            <div class="emergency-banner" id="emergencyBanner">
+                <strong>⚠️ Emergency Detected</strong>
+                <p>Please call 999 or visit A&E immediately.</p>
+            </div>
+
+            <div class="mode-selector">
+                <button class="mode-btn active" data-mode="clinic">
+                    🏥 Clinic Assistant
+                </button>
+                <button class="mode-btn" data-mode="rehab">
+                    💪 Exercise Guide
+                </button>
+            </div>
+
+            <div class="input-area">
+                <input 
+                    type="text" 
+                    id="userInput" 
+                    placeholder="Type your question here..."
+                    disabled
+                />
+                <button class="btn btn-primary" id="sendBtn" disabled>Send</button>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                <button class="btn btn-primary" id="startBtn">Start Avatar</button>
+                <button class="btn btn-secondary" id="stopBtn" disabled>Stop</button>
+            </div>
+
+            <div class="status" id="status">
+                <span class="status-dot" style="background: #999;"></span>
+                <span>Ready to start</span>
+            </div>
+        </div>
     </div>
 
-    <div class="avatar-container" id="avatarContainer">
-      <!-- JS expects a real <video id="avatarVideo"> to attach the WebRTC stream -->
-      <video id="avatarVideo" autoplay playsinline muted></video>
-      <div class="loading" id="loadingText">If video stays black: check HeyGen avatarId + permissions.</div>
-    </div>
-
-    <div class="controls">
-      <div class="emergency-banner" id="emergencyBanner">
-        <strong>⚠️ Emergency Detected</strong>
-        <p>Please call 999 or visit A&E immediately.</p>
-      </div>
-
-      <!-- Optional: JS supports a <select id="mode">. -->
-      <!-- We keep your buttons for UI, and also include a hidden select for the JS mode value. -->
-      <select id="mode" style="display:none;">
-        <option value="clinic" selected>clinic</option>
-        <option value="rehab">rehab</option>
-      </select>
-
-      <div class="mode-selector">
-        <button class="mode-btn active" data-mode="clinic" type="button" id="modeClinicBtn">
-          🏥 Clinic Assistant
-        </button>
-        <button class="mode-btn" data-mode="rehab" type="button" id="modeRehabBtn">
-          💪 Exercise Guide
-        </button>
-      </div>
-
-      <div class="input-area">
-        <!-- JS expects id="msg" and id="send" -->
-        <input
-          type="text"
-          id="msg"
-          placeholder="Type your question here..."
-        />
-        <button class="btn btn-primary" id="send" type="button">Send</button>
-      </div>
-
-      <div style="display:flex; gap:12px; margin-bottom:16px;">
-        <!-- Optional: the JS looks for id="startAvatar" if present -->
-        <button class="btn btn-primary" id="startAvatar" type="button">Start Avatar</button>
-
-        <!-- These are UI-only for now; your JS doesn’t use them unless you add handlers -->
-        <button class="btn btn-secondary" id="stopBtn" type="button" disabled>Stop</button>
-        <button class="btn btn-secondary" id="micBtn" type="button" disabled>🎤 Mic</button>
-      </div>
-
-      <!-- JS expects id="status" (simple text is fine) -->
-      <div class="status">
-        <span class="status-dot" style="background:#999;"></span>
-        <span id="status">Ready</span>
-      </div>
-
-      <!-- JS expects id="log" -->
-      <pre id="log"></pre>
-    </div>
-  </div>
-
-  <!-- IMPORTANT: Remove the remote HeyGen script.
-       You are importing @heygen/streaming-avatar via npm in main.js. -->
-  <script type="module" src="/src/main.js"></script>
-
-  <script>
-    // Keep your existing mode button UI working by syncing it to the hidden <select id="mode">
-    const modeSelect = document.getElementById("mode");
-    const clinicBtn = document.getElementById("modeClinicBtn");
-    const rehabBtn = document.getElementById("modeRehabBtn");
-
-    function setMode(mode) {
-      modeSelect.value = mode;
-      if (mode === "clinic") {
-        clinicBtn.classList.add("active");
-        rehabBtn.classList.remove("active");
-      } else {
-        rehabBtn.classList.add("active");
-        clinicBtn.classList.remove("active");
-      }
-      // Trigger change so main.js picks it up if it listens to the select
-      modeSelect.dispatchEvent(new Event("change"));
-    }
-
-    clinicBtn.addEventListener("click", () => setMode("clinic"));
-    rehabBtn.addEventListener("click", () => setMode("rehab"));
-  </script>
+    <!-- LiveKit Client SDK -->
+    <script src="https://unpkg.com/livekit-client@2.5.10/dist/livekit-client.umd.min.js"></script>
+    
+    <!-- Your app -->
+    <script type="module" src="/src/main.js"></script>
 </body>
 </html>
